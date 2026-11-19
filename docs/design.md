@@ -1,0 +1,53 @@
+# Design notes
+
+## What "use our IDE" meant here
+
+The organisation's IDE ([fsharp-wasm-ide](https://github.com/fsharp-wasm/fsharp-wasm-ide)) is a set of tools written in F# and
+compiled by fsharp-wasm; its first tool, the widget editor, draws one `<canvas>`. This designer follows the same pattern — a library
+under test, a browser module compiled by the toolchain, a page, an end-to-end test — and is built with the same toolchain
+(compiler, `lib/runtime`, `lib/fsharp-wasm-core`, Wasmecto). It is **not** drawn on a canvas: a canvas cannot take a CSS framework,
+and a screen reader finds one unnamed picture in it (see the accessibility baseline in `fsharp-wasm-graphics/docs/accessibility.md`).
+The designer is a DOM application on the runtime's Elmish/HTML layer, so Bootstrap's classes, the browser's own form controls and
+the accessibility tree work as they are. If the intent was to host it inside the IDE's page as a second tool, that is a small
+step (mount it next to the editor); it needs a decision about where the IDE gets its DOM chrome.
+
+## The model
+
+One record per block with a `Kind`, and a table (`fieldsOf`) that says which fields a kind uses and how to edit them. The inspector,
+the JSON codec, the undo log and the checks read that table; adding a kind is one table entry, one case in each renderer, and one
+line in `Lint`. The cost is a record that has fields a kind does not use; `blank`, `setField` and the codec keep them consistent.
+
+`Studio.update` is a pure function `Msg -> Model -> Model * Effect list`. Effects (save, copy) are data; `NewsletterDesigner` turns them into
+commands. That is why undo, import, selection and the announcements are tested without a DOM, under .NET and as WasmGC.
+
+## Output
+
+* **Email**: nested `role="presentation"` tables, a fixed-width container (600 px by default) that shrinks below 620 px, two
+  columns that stack, inline styles from the tokens, `mso` conditionals, a button that is a styled link for every client and a VML
+  `roundrect` for Outlook, a hidden preheader padded so that the first body words do not leak into the inbox preview.
+* **Web**: semantic HTML (`main`, `h1…h3`, `blockquote`, `footer`), the profile's class names, the stylesheet linked.
+* **Text**: headings underlined, links as `label (address)`, the unsubscribe address spelled out.
+* Text from the author is escaped; links go through `safeUrl` (http, https, mailto, tel, relative, merge tags — everything else
+  becomes `#`); an imported profile cannot inject through a token (colours must be hex, the font stack is filtered, numbers are
+  clamped). The preview frame is sandboxed (`allow-scripts` only, no `allow-same-origin`): it cannot reach the designer's page, and
+  it tells the page only which block was clicked.
+
+## Subset notes (what the compiler taught us)
+
+The library compiles on the subset fsharp-wasm supports and runs unchanged under .NET. Things the code avoids on purpose: exceptions
+with payload (the JSON parser records its first error instead), `String(char[])`, `Seq` functions over strings (index loops), list
+expressions with implicit yields in hot paths (lists of options and `List.choose`). Four compiler faults were found and fixed
+while building this (structural equality of unions with list fields, equality of lists of class instances such as exceptions,
+`List.contains` on strings, `Math.Pow` with fractional or negative exponents); the compiler's STATUS.md lists them and the gaps
+that are still open, and this repository's CI builds with the compiler revision that has the fixes (`COMPILER_REF`).
+
+## Not in the MVP
+
+* No drag and drop: blocks move with buttons (reachable by keyboard); drag and drop needs pointer events the DSL does not expose yet.
+* No image upload or asset library: images are addresses (hosted by you); an email client cannot take a local file anyway.
+* No per-block colours or padding: the profile's tokens apply to the whole issue. Overriding them per block is the next feature.
+* No sending, no list management, no ESP integration: the export is the product. Merge tags (`{{unsubscribe_url}}`) pass through.
+* The email is **not tested in real mail clients**. It follows the usual rules (tables, inline styles, conditionals, VML buttons) and
+  the checks cover the accessibility basics, but a pass through Litmus, Email on Acid or your own inboxes is still needed before a send.
+* Dark mode of mail clients is not handled (`color-scheme` is not declared).
+* The Tailwind profile uses the Play CDN (development use); the class names are Tailwind 3's.

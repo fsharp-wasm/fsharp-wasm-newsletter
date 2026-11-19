@@ -1,0 +1,7 @@
+/* The few rules Bootstrap has no class for. */
+.preview-frame { width: 100%; height: calc(100vh - 14rem); min-height: 28rem; }
+.preview-frame.preview-mobile { width: 375px; max-width: 100%; }
+.export-text { height: calc(100vh - 16rem); min-height: 24rem; white-space: pre; }
+h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; color: var(--bs-secondary-color); margin-bottom: .5rem; }
+h3 { font-size: 1.05rem; margin-bottom: .75rem; }
+summary { cursor: pointer; }

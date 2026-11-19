@@ -1,0 +1,9 @@
+[submodule "lib/runtime"]
+	path = lib/runtime
+	url = ../fsharp-wasm-runtime
+[submodule "lib/fsharp-wasm-core"]
+	path = lib/fsharp-wasm-core
+	url = ../fsharp-wasm-core
+[submodule "lib/wasmecto"]
+	path = lib/wasmecto
+	url = ../fsharp-wasmecto

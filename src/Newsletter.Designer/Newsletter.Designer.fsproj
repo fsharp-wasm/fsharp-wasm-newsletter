@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The designer as a browser module: the Elmish program on the Browser.Html DSL of fsharp-wasm-runtime, compiled to WasmGC
+       (`bash build/build.sh` writes dist/NewsletterDesigner.wasm).  Only the last file, NewsletterDesigner.fs, becomes the module's exports. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>preview</LangVersion>
+    <AssemblyName>NewsletterDesigner</AssemblyName>
+    <RootNamespace>Newsletter.Designer</RootNamespace>
+    <NuGetAudit>false</NuGetAudit>
+    <NoWarn>$(NoWarn);NU1900;NETSDK1188</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="View.fs" />
+    <Compile Include="NewsletterDesigner.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Newsletter.Core/Newsletter.Core.fsproj" />
+    <ProjectReference Include="../../lib/runtime/src/FSharpWasmRuntime.fsproj" />
+  </ItemGroup>
+</Project>

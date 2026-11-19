@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Newsletter Designer — fsharp-wasm</title>
+  <!-- the chrome of the tool is plain Bootstrap 5.3 (a local copy, see vendor/bootstrap); the profile of the newsletter is something else -->
+  <link rel="stylesheet" href="vendor/bootstrap/bootstrap.min.css">
+  <link rel="stylesheet" href="designer.css">
+</head>
+<body>
+  <p id="status" class="visually-hidden" role="status">Loading the designer…</p>
+  <div id="app"></div>
+  <noscript><p class="p-3">The designer is a WebAssembly program and needs JavaScript to start it.</p></noscript>
+  <script type="module">
+    import { boot } from "../lib/runtime/runtime/boot.js";
+    await boot({ wasm: new URL("../dist/NewsletterDesigner.wasm", import.meta.url), entry: "start" });
+
+    // Two things the page does for the module, in a few lines each; the designer itself is F#.
+    // 1. The preview frame is sandboxed (scripts only, no access to this page) and says which block was clicked, and where it
+    //    is scrolled: a click selects the block in the structure; a new document keeps the scroll position.
+    let scroll = 0;
+    const frame = () => document.querySelector("iframe.preview-frame");
+    addEventListener("message", (e) => {
+      const f = frame();
+      if (!f || e.source !== f.contentWindow) return;
+      const d = e.data ?? {};
+      if (d.block) document.querySelector(`[data-select="${CSS.escape(String(d.block))}"]`)?.click();
+      else if (typeof d.scroll === "number") scroll = d.scroll;
+      else if (d.ready) f.contentWindow.postMessage({ scroll }, "*");
+    });
+    // 2. Download: a button names the file and the element that holds the text.
+    document.addEventListener("click", (e) => {
+      const b = e.target.closest?.("[data-download]");
+      const src = b && document.querySelector(b.dataset.source);
+      if (!src) return;
+      const url = URL.createObjectURL(new Blob([src.value ?? src.textContent], { type: b.dataset.type || "text/plain" }));
+      const a = Object.assign(document.createElement("a"), { href: url, download: b.dataset.download });
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+  </script>
+</body>
+</html>
