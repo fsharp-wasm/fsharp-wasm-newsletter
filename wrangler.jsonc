@@ -1,0 +1,6 @@
+{
+  // The designer is a static site: Cloudflare serves dist/site (build/site.sh) with the headers of its _headers file.
+  "name": "fsharp-wasm-newsletter",
+  "compatibility_date": "2026-11-01",
+  "assets": { "directory": "./dist/site" }
+}

@@ -47,6 +47,7 @@ export FSHARP_WASM_BIN=/path/to/fsharp-wasm    # the binary of a release
 bash build/test.sh wasm                        # the same checks compiled to WasmGC and run in Node
 bash build/build.sh                            # dist/NewsletterDesigner.wasm
 bash build/serve.sh                            # http://127.0.0.1:8080/web/
+bash build/site.sh && node build/serve-site.mjs  # the deployable site, under the production headers (docs/deploy.md)
 npm ci && node tests/e2e/designer.mjs         # the designer in Chromium (Playwright)
 ```
 

@@ -3,20 +3,26 @@
 import { readFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { launch, serve, checker } from '../../lib/runtime/tests/e2e/lib.mjs';
+import { serveSite } from '../../build/serve-site.mjs';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const shots = fileURLToPath(new URL('../../docs/images/', import.meta.url));
 const axeSource = readFileSync(fileURLToPath(new URL('../../node_modules/axe-core/axe.min.js', import.meta.url)), 'utf8');
 const { check, failures } = checker();
 
-const { server, base } = await serve(root, 0);
+// E2E_SITE=dist/site: the deployed layout, served under the headers of site/_headers (a strict content security policy); default: the checkout
+const siteDir = process.env.E2E_SITE ? fileURLToPath(new URL(`../../${process.env.E2E_SITE}`, import.meta.url)) : null;
+const { server, base } = siteDir ? await serveSite(siteDir, 0) : await serve(root, 0);
+const pageUrl = siteDir ? `${base}/index.html` : `${base}/web/index.html`;
 const { browser, page, errors } = await launch();
 await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
 await page.emulateMedia({ reducedMotion: 'reduce' });      // no transitions: axe reads the colours a person sees at rest
 // a change reaches the page a moment after the event that caused it: poll for it instead of reading once
 const poll = async (read, ms = 4000) => { const end = Date.now() + ms; for (;;) { try { if (await read()) return true; } catch {} if (Date.now() > end) return false; await page.waitForTimeout(50); } };
+let firstResponse = null;
 const open = async () => {
-  await page.goto(`${base}/web/index.html`);
+  const response = await page.goto(pageUrl);
+  firstResponse ??= response;
   await page.waitForSelector('header .navbar-brand', { timeout: 20000 });
 };
 const frame = () => page.frameLocator('iframe.preview-frame');
@@ -28,6 +34,13 @@ const exported = async (label) => {
 };
 
 await open();
+
+// ── the deployed layout is served under a strict content security policy and still works ──
+if (siteDir) {
+  const csp = (await firstResponse.headerValue('content-security-policy')) ?? '';
+  check('the site is served under a content security policy', csp.includes("default-src 'self'") && csp.includes("object-src 'none'"), csp);
+  check('the module is served as application/wasm with a cache policy', await page.evaluate(async () => { const r = await fetch('NewsletterDesigner.wasm'); return r.headers.get('content-type') === 'application/wasm' && /max-age/.test(r.headers.get('cache-control') ?? ''); }));
+}
 
 // ── the first screen ──
 check('the designer starts and shows the sample issue', (await outline().count()) === 10, `blocks: ${await outline().count()}`);

@@ -1,0 +1,82 @@
+name: Deploy
+
+# Deploys what CI built and tested — the `site` artifact of a CI run, not a rebuild — to Cloudflare (static assets, no Worker code).
+# docs/deploy.md lists what the account needs.
+#
+#   automatic  after a successful CI run on main, when the repository variable CD_ENABLED is "true"
+#   manual     Actions → Deploy → Run workflow (optionally the CI run to deploy)
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      run-id:
+        description: "CI run whose `site` artifact is deployed (default: the latest successful CI run on main)"
+        default: ""
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  GH_REPO: ${{ github.repository }}
+
+jobs:
+  cloudflare:
+    runs-on: ubuntu-24.04
+    environment: cloudflare
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && vars.CD_ENABLED == 'true')
+    steps:
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            .github/tool-versions.env
+            wrangler.jsonc
+          sparse-checkout-cone-mode: false
+      - run: grep -E '^[A-Z_]+=' .github/tool-versions.env >> "$GITHUB_ENV"
+      - name: Which CI run
+        id: run
+        env:
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          INPUT_RUN_ID: ${{ inputs.run-id }}
+        run: |
+          run_id="$WORKFLOW_RUN_ID"
+          [ -n "$run_id" ] || run_id="$INPUT_RUN_ID"
+          [ -n "$run_id" ] || run_id=$(gh run list --workflow ci.yml --branch main --event push --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          [ -n "$run_id" ] || { echo "::error::no successful CI run on main to deploy"; exit 1; }
+          echo "id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "Deploying the \`site\` artifact of CI run $run_id" >> "$GITHUB_STEP_SUMMARY"
+      - name: The package CI built and tested
+        run: gh run download "${{ steps.run.outputs.id }}" --name site --dir dist/site
+      - name: Deploy
+        id: deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || { echo "::error::the secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are not set on the environment 'cloudflare' (docs/deploy.md)"; exit 1; }
+          npx --yes "$WRANGLER" deploy 2>&1 | tee deploy.log
+          url=$(grep -oE 'https://[A-Za-z0-9._-]+\.workers\.dev' deploy.log | head -1 || true)
+          echo "url=${url}" >> "$GITHUB_OUTPUT"
+          echo "Live: ${url:-see the wrangler output}" >> "$GITHUB_STEP_SUMMARY"
+      - name: The live site answers
+        if: steps.deploy.outputs.url != ''
+        run: |
+          for i in 1 2 3 4 5 6; do
+            code=$(curl -s -o /tmp/index.html -w '%{http_code}' "${{ steps.deploy.outputs.url }}/") && [ "$code" = 200 ] && break
+            sleep 10
+          done
+          [ "$code" = 200 ] || { echo "::error::the live site answered $code"; exit 1; }
+          grep -q 'Newsletter Designer' /tmp/index.html
+          curl -sI "${{ steps.deploy.outputs.url }}/NewsletterDesigner.wasm" | tr -d '\r' | grep -iE '^content-type: application/wasm' 
+          curl -sI "${{ steps.deploy.outputs.url }}/" | tr -d '\r' | grep -iE '^content-security-policy: default-src' 

@@ -1,0 +1,18 @@
+# Response headers of the deployed site (Cloudflare reads this file from the asset directory; build/serve-site.mjs applies the same
+# file locally, so the end-to-end test runs under the headers that production sends).
+#
+# script-src: the page's own module, the WebAssembly module (wasm-unsafe-eval), and the preview frame, which inherits this policy: its
+# click bridge is an inline script (the frame is sandboxed without allow-same-origin, so it cannot reach this page).  The Tailwind
+# profile's browser build loads from its CDN into the preview frame only.
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+  Cross-Origin-Opener-Policy: same-origin
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src * data: blob:; font-src 'self' data:; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'
+
+/*.wasm
+  Cache-Control: public, max-age=3600, must-revalidate
+
+/vendor/*
+  Cache-Control: public, max-age=86400

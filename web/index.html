@@ -13,8 +13,10 @@
   <div id="app"></div>
   <noscript><p class="p-3">The designer is a WebAssembly program and needs JavaScript to start it.</p></noscript>
   <script type="module">
-    import { boot } from "../lib/runtime/runtime/boot.js";
-    await boot({ wasm: new URL("../dist/NewsletterDesigner.wasm", import.meta.url), entry: "start" });
+    // where the glue and the module are: web/paths.js in a checkout, written by build/site.sh for the deployed site
+    import { runtime, wasm } from "./paths.js";
+    const { boot } = await import(runtime + "boot.js");
+    await boot({ wasm: new URL(wasm, import.meta.url), entry: "start" });
 
     // Two things the page does for the module, in a few lines each; the designer itself is F#.
     // 1. The preview frame is sandboxed (scripts only, no access to this page) and says which block was clicked, and where it

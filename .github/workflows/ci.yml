@@ -93,6 +93,23 @@ jobs:
       - name: Designer in Chromium
         run: node tests/e2e/designer.mjs
 
+      # the deployable site (static files), checked the way it is served: under the headers of site/_headers, and with the
+      # deploy tool's dry run (no account needed)
+      - name: Site package
+        run: bash build/site.sh
+      - name: Site in Chromium, under the production headers
+        run: E2E_SITE=dist/site node tests/e2e/designer.mjs
+      - name: Cloudflare dry run
+        run: |
+          grep -E '^[A-Z_]+=' .github/tool-versions.env >> "$GITHUB_ENV"
+          source .github/tool-versions.env
+          npx --yes "$WRANGLER" deploy --dry-run
+      - uses: actions/upload-artifact@v7
+        with:
+          name: site
+          path: dist/site
+          if-no-files-found: error
+
       - uses: actions/upload-artifact@v7
         with:
           name: NewsletterDesigner
