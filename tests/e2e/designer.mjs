@@ -72,7 +72,7 @@ check('redo brings the typed text back', (await area.inputValue()).startsWith('F
 
 await page.getByLabel('Alignment', { exact: true }).selectOption('center');
 check('a select shows the value the model holds (alignment centre)', await poll(async () => (await page.getByLabel('Alignment', { exact: true }).inputValue()) === 'center'));
-check('and the preview follows', await poll(async () => (await frame().locator('p[style*="text-align:center"]').count()) >= 1));
+check('and the preview follows', await poll(async () => (await frame().locator('p.text-center').count()) >= 1));
 
 // ── selecting from the preview, moving, deleting ──
 await frame().locator('h2').first().click();
@@ -113,10 +113,10 @@ check('picking Tailwind switches the class names', (await exported('Web HTML')).
 await page.getByRole('button', { name: 'Preview', exact: true }).click();
 await page.getByRole('button', { name: 'Theme', exact: true }).click();
 await page.getByLabel('Primary', { exact: true }).fill('#c026d3');
-check('a token edit repaints the email', (await exported('Email HTML')).includes('background-color:#c026d3'));
+check('a token edit repaints the email', (await exported('Email HTML')).includes('background: #c026d3'));
 await page.getByRole('button', { name: 'Theme', exact: true }).click();
 await page.getByLabel('Primary', { exact: true }).fill('not-a-colour');
-check('an invalid colour is flagged, and the email keeps a valid one', (await page.getByLabel('Primary', { exact: true }).getAttribute('aria-invalid')) === 'true' && (await exported('Email HTML')).includes('background-color:#0d6efd'));
+check('an invalid colour is flagged, and the email keeps a valid one', (await page.getByLabel('Primary', { exact: true }).getAttribute('aria-invalid')) === 'true' && (await exported('Email HTML')).includes('background: #0d6efd'));
 await page.getByRole('button', { name: 'Preview', exact: true }).click();
 
 // ── the output ──

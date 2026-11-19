@@ -6,6 +6,7 @@ open System.Text
 open Newsletter.Model
 open Newsletter.Profile
 open Newsletter.Markup
+open FSharp.Wasm.Ui
 
 /// `Preview` adds what the designer needs (block markers, the selection outline, the click bridge); an export has none of it.
 /// `Local` maps a stylesheet address to a local copy (the preview uses the copy that ships with the designer).
@@ -55,110 +56,82 @@ let private previewScript : string =
     + "parent.postMessage({ready:true},'*')</script>"
 
 // ───────────────────────────── email ─────────────────────────────
+// The email is built on the grid and the components of Foundation for Emails (FSharp.Wasm.Ui.Ink): every block is a row of one column
+// (two for "Two columns"), the stylesheet is a function of the profile's tokens, and the inliner writes it into the elements.
 
-let private pad = 24
+let private inkSettings (p: Profile) : Ink.Settings =
+    let c key = Hex(colorOf key p)
+    let width = float (numOf "width" 320 900 p)
+    { Ink.defaults with
+        Primary = c "primary"; Secondary = c "secondary"
+        // Foundation's `White` is the text of a button
+        White = c "onPrimary"
+        FontColor = c "text"; MediumGray = c "muted"; BodyBackground = c "canvas"; ContainerBackground = c "surface"
+        FontFamily = fontOf p; FontSize = float (numOf "size" 10 28 p); GlobalWidth = width; Radius = float (numOf "radius" 0 40 p) }
 
-let private emailBlock (p: Profile) (o: Options) (b: Block) : string =
-    let text, muted, primary = colorOf "text" p, colorOf "muted" p, colorOf "primary" p
-    let font, size, radius = fontOf p, numOf "size" 10 28 p, numOf "radius" 0 40 p
+/// Rules that are the newsletter's own, on top of Foundation's: the secondary button's label, the quote, the divider, the footer, and the
+/// selection outline of the preview.
+let private extraRules (p: Profile) (o: Options) : Rule list =
+    let c key = Hex(colorOf key p)
+    let rules =
+        [ // Foundation sets headings in normal weight and lets text hyphenate; a newsletter wants bold headings and no broken words
+          Style.rule [ "h1"; "h2"; "h3" ] [ Style.fontWeight FontWeight.Bold ]
+          Style.rule [ "td"; "th" ] [ Style.raw "-webkit-hyphens" "manual"; Style.raw "-moz-hyphens" "manual"; Style.raw "hyphens" "manual" ]
+          Style.rule [ "table.button.secondary table td a" ] [ Style.color (c "onSecondary") ]
+          Style.rule [ "table.quote th.quote-inner" ] [ Style.raw "border-left" ("4px solid " + colorOf "primary" p); Style.padding4 (Px 4.0) Zero (Px 4.0) (Px 16.0) ]
+          Style.rule [ "table.quote p" ] [ Style.fontSize (Em 1.125); Style.raw "font-style" "italic" ]
+          Style.rule [ "table.quote p.quote-by" ] [ Style.fontSize (Em 0.875); Style.color (c "muted"); Style.raw "font-style" "normal" ]
+          Style.rule [ "table.divider th" ] [ Style.raw "border-top" ("1px solid " + colorOf "border" p); Style.fontSize Zero; Style.lineHeightLen Zero; Style.height (Px 1.0) ]
+          Style.rule [ "p.footer"; "p.footer a" ] [ Style.color (c "muted"); Style.fontSize (Px (max 11.0 (float (numOf "size" 10 28 p) - 3.0))) ] ]
+    if o.Preview then
+        rules @ [ Style.rule [ "[data-block]:hover" ] [ Style.raw "outline" "1px dashed #6c757d"; Style.raw "outline-offset" "-1px"; Style.raw "cursor" "pointer" ]
+                  Style.rule [ "[data-selected]" ] [ Style.important (Style.raw "outline" "2px solid #0d6efd"); Style.raw "outline-offset" "-2px" ] ]
+    else rules
+
+let private alignClass (a: Align) : (string * string) list =
+    match a with Left -> [] | Center -> [ Html.cls "text-center" ] | Right -> [ Html.cls "text-right" ]
+
+let private paragraphsOf (text: string) (attrs: (string * string) list) : Node list =
+    paragraphs text |> List.map (fun t -> Html.el "p" attrs [ Html.raw (inlineHtml "" t) ])
+
+/// One block as a row of Foundation's grid.
+let private emailBlock (p: Profile) (o: Options) (b: Block) : Node =
+    let one (kids: Node list) = Ink.grid12 false [ (12, 12, kids) ]
+    let marked (n: Node) =
+        if o.Preview then Html.withAttrs ([ "data-block", string b.Id ] @ (if b.Id = o.Selected then [ "data-selected", "" ] else [])) n else n
     let width = numOf "width" 320 900 p
-    let ff = ("font-family", font)
-    let align = alignKey b.Align
-    let link = style [ "color", primary; "text-decoration", "underline" ]
-    let cell (padding: string) (inner: string) =
-        "<tr><td" + marker o b + attr "style" ("padding:" + padding) + ">" + inner + "</td></tr>\n"
-    let para (px: int) (color: string) (s: string) =
-        paragraphs s
-        |> List.map (fun t ->
-            "<p" + attr "style" (style [ "margin", "0 0 12px"; ff; "font-size", string px + "px"; "line-height", "1.6"; "color", color; "text-align", align ]) + ">"
-            + inlineHtml (attr "style" link) t + "</p>")
-        |> String.concat ""
-    match b.Kind with
-    | Heading ->
-        let px = (match b.Level with 1 -> size * 2 | 2 -> size * 3 / 2 | _ -> size * 5 / 4)
-        let tag = "h" + string (clamp 1 3 b.Level)
-        cell "12px 24px 4px" ("<" + tag + attr "style" (style [ "margin", "0"; ff; "font-size", string px + "px"; "line-height", "1.25"; "font-weight", "700"; "color", text; "text-align", align ]) + ">" + escape b.Text + "</" + tag + ">")
-    | Paragraph -> cell "8px 24px 0" (para size text b.Text)
-    | Image ->
-        let w = max 1 ((width - 2 * pad) * clamp 10 100 b.Size / 100)
-        let img =
-            "<img" + attr "src" (safeUrl b.Url) + attr "alt" b.Alt + attr "width" (string w)
-            + attr "style" (style [ "display", "block"; "border", "0"; "width", "100%"; "max-width", string w + "px"; "height", "auto" ]) + ">"
-        let inner = if b.Link.Trim() = "" then img else "<a" + attr "href" (safeUrl b.Link) + ">" + img + "</a>"
-        cell "8px 24px" ("<table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\"" + attr "align" align + "><tr><td>" + inner + "</td></tr></table>")
-    | Button ->
-        let bg, fg, border =
-            match b.Variant with
-            | Primary -> primary, colorOf "onPrimary" p, primary
-            | Secondary -> colorOf "secondary" p, colorOf "onSecondary" p, colorOf "secondary" p
-            | Outline -> "transparent", primary, primary
-        let href = safeUrl b.Url
-        let w = 48 + 10 * b.Text.Length
-        let arc = if radius = 0 then 0 else min 50 (radius * 100 / 44)
-        let vml =
-            "<!--[if mso]><v:roundrect xmlns:v=\"urn:schemas-microsoft-com:vml\" xmlns:w=\"urn:schemas-microsoft-com:office:word\"" + attr "href" href
-            + attr "style" ("height:44px;v-text-anchor:middle;width:" + string w + "px;") + attr "arcsize" (string arc + "%")
-            + (if b.Variant = Outline then attr "strokecolor" border + " fillcolor=\"" + colorOf "surface" p + "\"" else " stroke=\"f\" fillcolor=\"" + bg + "\"")
-            + "><w:anchorlock/><center" + attr "style" (style [ "color", fg; ff; "font-size", string size + "px"; "font-weight", "bold" ]) + ">" + escape b.Text + "</center></v:roundrect><![endif]-->"
-        let anchor =
-            "<a" + attr "href" href
-            + attr "style" (style [ "display", "inline-block"; "padding", "11px 24px"; ff; "font-size", string size + "px"; "line-height", "20px"; "font-weight", "bold"
-                                    "color", fg; "text-decoration", "none"; "border", "1px solid " + border; "border-radius", string radius + "px"; "background-color", bg ])
-            + ">" + escape b.Text + "</a>"
-        cell "12px 24px"
-            ("<table role=\"presentation\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\"" + attr "align" align + "><tr><td>"
-             + vml + "<!--[if !mso]><!-->" + anchor + "<!--<![endif]--></td></tr></table>")
-    | Quote ->
-        let q = "<p" + attr "style" (style [ "margin", "0"; ff; "font-size", string (size * 9 / 8) + "px"; "line-height", "1.5"; "font-style", "italic"; "color", text ]) + ">" + inlineHtml (attr "style" link) b.Text + "</p>"
-        let by =
-            if b.Text2.Trim() = "" then ""
-            else "<p" + attr "style" (style [ "margin", "8px 0 0"; ff; "font-size", string (max 12 (size - 2)) + "px"; "color", muted ]) + ">— " + escape b.Text2 + "</p>"
-        cell "12px 24px" ("<table role=\"presentation\" width=\"100%\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\"><tr><td" + attr "style" ("border-left:4px solid " + primary + ";padding:4px 0 4px 16px") + ">" + q + by + "</td></tr></table>")
-    | Divider ->
-        cell "12px 24px" ("<table role=\"presentation\" width=\"100%\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\"><tr><td" + attr "style" ("border-top:1px solid " + colorOf "border" p + ";font-size:0;line-height:0;height:1px") + ">&nbsp;</td></tr></table>")
-    | Spacer ->
-        let h = string (clamp 4 120 b.Size)
-        "<tr><td" + marker o b + attr "style" ("height:" + h + "px;line-height:" + h + "px;font-size:1px") + attr "height" h + ">&nbsp;</td></tr>\n"
-    | Columns ->
-        let col (side: string) (s: string) =
-            "<td class=\"stack\" width=\"50%\" valign=\"top\"" + attr "style" ("padding-" + side + ":12px") + ">" + para size text s + "</td>"
-        cell "8px 24px 0" ("<table role=\"presentation\" width=\"100%\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\"><tr>" + col "right" b.Text + col "left" b.Text2 + "</tr></table>")
-    | Footer ->
-        let small = max 11 (size - 3)
-        let line (s: string) = if s.Trim() = "" then "" else "<p" + attr "style" (style [ "margin", "0 0 6px"; ff; "font-size", string small + "px"; "line-height", "1.5"; "color", muted; "text-align", align ]) + ">" + inlineHtml (attr "style" (style [ "color", muted; "text-decoration", "underline" ])) s + "</p>"
-        let unsub =
-            "<p" + attr "style" (style [ "margin", "0"; ff; "font-size", string small + "px"; "text-align", align ]) + "><a" + attr "href" (safeUrl (if b.Url.Trim() = "" then "{{unsubscribe_url}}" else b.Url))
-            + attr "style" (style [ "color", muted; "text-decoration", "underline" ]) + ">Unsubscribe</a></p>"
-        cell "20px 24px 24px" (line b.Text + line b.Text2 + unsub)
+    marked
+        (match b.Kind with
+         | Heading -> one [ Html.el ("h" + string (clamp 1 3 b.Level)) (alignClass b.Align) [ Html.text b.Text ] ]
+         | Paragraph -> one (paragraphsOf b.Text (alignClass b.Align))
+         | Image ->
+            let w = max 1 ((width - 2 * int (inkSettings p).Gutter) * clamp 10 100 b.Size / 100)
+            let img =
+                Html.el "img" ([ "src", safeUrl b.Url; "alt", b.Alt; "width", string w ] @ (match b.Align with Left -> [] | Center -> [ Html.cls "float-center" ] | Right -> [ Html.cls "float-right" ])) []
+            one [ (if b.Link.Trim() = "" then img else Html.el "a" [ "href", safeUrl b.Link ] [ img ]) ]
+         | Button ->
+            let variant = (match b.Variant with Primary -> Ink.Primary | Secondary -> Ink.Secondary | Outline -> Ink.Outline)
+            let btn = Ink.button variant Ink.Default false (safeUrl b.Url) [ Html.text b.Text ]
+            one [ (match b.Align with Left -> btn | Center -> Html.withAttrs [ Html.cls "float-center"; "align", "center" ] btn | Right -> Html.withAttrs [ "align", "right" ] btn) ]
+         | Quote ->
+            let by = if b.Text2.Trim() = "" then [] else [ Html.el "p" [ Html.cls "quote-by" ] [ Html.text ("— " + b.Text2) ] ]
+            one [ Html.el "table" [ "role", "presentation"; Html.cls "quote"; "border", "0"; "cellpadding", "0"; "cellspacing", "0" ]
+                    [ Html.el "tbody" [] [ Html.el "tr" [] [ Html.el "th" [ Html.cls "quote-inner" ] ([ Html.el "p" [] [ Html.raw (inlineHtml "" b.Text) ] ] @ by) ] ] ] ]
+         | Divider ->
+            one [ Html.el "table" [ "role", "presentation"; Html.cls "divider"; "border", "0"; "cellpadding", "0"; "cellspacing", "0" ] [ Html.el "tbody" [] [ Html.el "tr" [] [ Html.el "th" [] [ Html.raw "&nbsp;" ] ] ] ] ]
+         | Spacer -> Ink.spacer (float (clamp 4 120 b.Size))
+         | Columns -> Ink.grid12 false [ (12, 6, paragraphsOf b.Text []); (12, 6, paragraphsOf b.Text2 []) ]
+         | Footer ->
+            let line (s: string) = if s.Trim() = "" then [] else [ Html.el "p" [ Html.cls "footer text-center" ] [ Html.raw (inlineHtml "" s) ] ]
+            let unsub = Html.el "p" [ Html.cls "footer text-center" ] [ Html.el "a" [ "href", safeUrl (if b.Url.Trim() = "" then "{{unsubscribe_url}}" else b.Url) ] [ Html.text "Unsubscribe" ] ]
+            one (line b.Text @ line b.Text2 @ [ unsub ]))
 
-/// The HTML email: a centred table of the profile's width, every style inline, MSO conditionals for Outlook, a hidden preheader.
+/// The HTML email: Foundation's grid and components, every style inlined, a hidden preheader.  `Preview` adds the block markers, the selection
+/// outline and the click bridge of the designer; an export has none of it.
 let email (o: Options) (p: Profile) (d: Document) : string =
-    let width = numOf "width" 320 900 p
-    let canvas, surface = colorOf "canvas" p, colorOf "surface" p
-    let sb = StringBuilder()
-    let add (s: string) = sb.Append(s) |> ignore
-    add "<!DOCTYPE html>\n"
-    add ("<html" + attr "lang" (if d.Lang.Trim() = "" then "en" else d.Lang) + " xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:v=\"urn:schemas-microsoft-com:vml\" xmlns:o=\"urn:schemas-microsoft-com:office:office\">\n<head>\n")
-    add "<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\">\n"
-    add "<meta name=\"x-apple-disable-message-reformatting\">\n<meta name=\"format-detection\" content=\"telephone=no, date=no, address=no, email=no\">\n"
-    add ("<title>" + escape (if d.Subject.Trim() = "" then d.Name else d.Subject) + "</title>\n")
-    add "<!--[if mso]><noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript><![endif]-->\n"
-    add "<style>body{margin:0;padding:0;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%}table,td{mso-table-lspace:0;mso-table-rspace:0}img{-ms-interpolation-mode:bicubic}"
-    add "@media only screen and (max-width:620px){.container{width:100%!important}.stack{display:block!important;width:100%!important;padding:0!important}}</style>\n"
-    if o.Preview then add (previewHead + "\n")
-    add "</head>\n"
-    add ("<body" + attr "style" (style [ "margin", "0"; "padding", "0"; "background-color", canvas ]) + ">\n")
-    if d.Preheader.Trim() <> "" then
-        add ("<div style=\"display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:" + canvas + ";opacity:0\">" + escape d.Preheader + String.replicate 40 "&zwnj;&nbsp;" + "</div>\n")
-    add ("<table role=\"presentation\" width=\"100%\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\"" + attr "bgcolor" canvas + "><tr><td align=\"center\" style=\"padding:24px 12px\">\n")
-    add ("<!--[if mso]><table role=\"presentation\" width=\"" + string width + "\" align=\"center\" cellpadding=\"0\" cellspacing=\"0\"><tr><td><![endif]-->\n")
-    add ("<table role=\"presentation\" class=\"container\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"" + string width + "\"" + attr "bgcolor" surface
-         + attr "style" ("width:100%;max-width:" + string width + "px;background-color:" + surface + ";border-radius:" + string (numOf "radius" 0 40 p) + "px") + ">\n")
-    for b in d.Blocks do add (emailBlock p o b)
-    add "</table>\n<!--[if mso]></td></tr></table><![endif]-->\n</td></tr></table>\n"
-    if o.Preview then add (previewScript + "\n")
-    add "</body>\n</html>\n"
-    sb.ToString()
+    let body = [ Ink.container (d.Blocks |> List.map (emailBlock p o)) ]
+    Ink.page (inkSettings p) (if d.Lang.Trim() = "" then "en" else d.Lang) (if d.Subject.Trim() = "" then d.Name else d.Subject) d.Preheader
+        (extraRules p o) "" (if o.Preview then previewScript else "") body
 
 // ───────────────────────────── web version ─────────────────────────────
 

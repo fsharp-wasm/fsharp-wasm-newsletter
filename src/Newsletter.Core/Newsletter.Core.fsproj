@@ -9,6 +9,9 @@
     <NoWarn>$(NoWarn);NU1900;NETSDK1188</NoWarn>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../Ui/FSharp.Wasm.Ui.fsproj" />
+  </ItemGroup>
+  <ItemGroup>
     <Compile Include="Json.fs" />
     <Compile Include="Model.fs" />
     <Compile Include="Color.fs" />

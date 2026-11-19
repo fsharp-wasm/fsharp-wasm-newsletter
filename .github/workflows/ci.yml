@@ -7,7 +7,7 @@ on:
 
 env:
   # the compiler the designer is built with (a fsharp-wasm revision; replace by a release binary when there is one)
-  COMPILER_REF: 92f670fa5fd5aa96897ba7478625ca9de73f00fc
+  COMPILER_REF: 7a79ad6b07745169a606f9121eea03c148313bcd
 
 jobs:
   # The library and its suites under .NET.

@@ -11,22 +11,22 @@ project as JSON. Everything runs in the browser; there is no server and nothing 
 | | |
 |---|---|
 | **Blocks** | heading, text, image, button, quote, divider, spacer, two columns, footer. Text takes `**bold**`, `_italic_` and `[links](https://…)`. |
-| **Three outputs** | the **email** (table layout, every style inline, Outlook conditionals and VML buttons, a hidden preheader), the **web version** (semantic HTML with the framework's own class names), the **plain-text** alternative. |
-| **A framework, configurable** | **Bootstrap 5.3** by default, **Tailwind CSS 3** as the second profile, **Custom** for your own. A profile is design tokens + a class map + a stylesheet/script address; every part is editable, and a profile is a JSON file you can export and import. |
+| **Three outputs** | the **email** (the grid and components of [Foundation for Emails](https://github.com/foundation/foundation-emails), MIT, written as typed F#: nested `role="presentation"` tables, the 12-column grid that stacks below its breakpoint, every style inlined, a hidden preheader), the **web version** (semantic HTML with the framework's own class names), the **plain-text** alternative. |
+| **A configurable profile** | **Bootstrap 5.3** by default (its palette and type, and its class names for the web version), **Tailwind CSS 3** as the second profile, **Custom** for your own. A profile is design tokens + a class map + a stylesheet/script address; every part is editable, and a profile is a JSON file you can export and import. |
 | **Checks** | subject, preheader and language; alternative text for every image; button and text contrast (WCAG 1.4.3, computed from your tokens); heading order; vague link labels; a footer with an unsubscribe link and an address; Gmail's 102 KB clipping limit. Each finding names its block and jumps to it. |
 | **Editing** | click a block in the preview or the structure; move, duplicate, delete; undo and redo (typing into one field is one step); phone width; the project is kept in the browser and survives a reload. |
 | **Keyboard and screen reader** | everything is reachable and named; changes are announced in a live region; axe-core (WCAG 2.0/2.1/2.2 A and AA) finds no violation on the block, newsletter and theme panels (`tests/e2e/designer.mjs`; automated checks find a minority of problems: a screen reader pass is still to do). |
 
 ### Which framework, and what "configurable" means
 
-The designer's own interface is plain **Bootstrap 5.3** — deliberately not the look of this organisation. What the profile configures is
-the *newsletter* you design:
+The designer's own interface is plain **Bootstrap 5.3** — deliberately not the look of this organisation. The *newsletter* you design is
+another matter, and Bootstrap is not made for email: mail clients ignore external stylesheets and, in Outlook's case, do not know Flexbox or
+Grid. So:
 
-* An **email** cannot use a framework: mail clients drop or ignore external stylesheets. So the email is painted from the profile's
-  **tokens** (colours, font stack, base size, corner radius, content width), written as inline styles. The Bootstrap profile carries
-  Bootstrap's own values (`#0d6efd`, `#212529`, …), so the email looks like a Bootstrap page.
-* The **web version** is real Bootstrap (or Tailwind): it links the stylesheet and uses the **class map** (`btn btn-primary`,
-  `container`, `row`/`col-md-6`, …).
+* The **email** is built on **Foundation for Emails**' tables (see [docs/ui.md](docs/ui.md)): the stylesheet is a function of the profile's
+  **tokens** (colours, font stack, base size, corner radius, content width) and an inliner writes it into the elements. The Bootstrap profile
+  carries Bootstrap's palette (`#0d6efd`, `#212529`, …), so the email looks like a Bootstrap page without using a line of Bootstrap CSS.
+* The **web version** is real Bootstrap (or Tailwind): it links the stylesheet and uses the **class map** (`btn btn-primary`, `container`, …).
 * **Custom** starts as a copy of Bootstrap with no stylesheet and empty class names: fill in your design system's classes and address.
 
 The Tailwind profile loads Tailwind's browser build (the "Play CDN"), which Tailwind documents as a development tool; for production
@@ -38,7 +38,7 @@ compile your own CSS and put its address in the stylesheet field.
 git submodule update --init                    # lib/runtime (HTML/Elmish library + JS glue), lib/fsharp-wasm-core, lib/wasmecto
 source build/env.sh                            # FSHARP_WASM_CORE_DIR
 
-# the library and its 58 checks, under .NET
+# the libraries and their 77 checks, under .NET
 bash build/test.sh dotnet
 
 # as WebAssembly GC: a compiler and wasm-tools
@@ -55,7 +55,8 @@ npm ci && node tests/e2e/designer.mjs         # the designer in Chromium (Playwr
 
 | path | what it is |
 |---|---|
-| `src/Newsletter.Core` | the library, pure F#: `Model` (blocks, fields, operations), `Profile`, `Markup`, `Render` (email, web, text), `Codec` + `Json`, `Lint`, `Color`, and `Studio` — the designer as a state machine (`update` is pure and says which effects to carry out). Runs under .NET and as WasmGC. |
+| `src/Ui` | **typed CSS and HTML for the web and for email**, no dependencies (see [docs/ui.md](docs/ui.md)): `Color` (hex, hsl, oklch, WCAG contrast), `Style` (values, selectors, rules, a renderer, merging), `Html` (a document tree that is pure data), `Inline` (the inliner), `Ink` (Foundation for Emails as F#). |
+| `src/Newsletter.Core` | the library, pure F#: `Model` (blocks, fields, operations), `Profile`, `Markup`, `Render` (email on `Ink`, web, text), `Codec` + `Json`, `Lint`, `Color`, and `Studio` — the designer as a state machine (`update` is pure and says which effects to carry out). Runs under .NET and as WasmGC. |
 | `src/Newsletter.Designer` | the interface: `View` (Bootstrap markup on the `Browser.Html` DSL) and `NewsletterDesigner` (hosts the program, local storage, clipboard). Compiled to `dist/NewsletterDesigner.wasm`. |
 | `web/` | the page, a few lines of CSS, a local copy of Bootstrap 5.3.3 (MIT, `web/vendor/bootstrap`). The page does two things for the module: it relays clicks from the sandboxed preview frame and it starts downloads. |
 | `tests/Newsletter.Tests` | the suites, written with [Wasmecto](https://github.com/fsharp-wasm/fsharp-wasmecto); `Newsletter.WasmTests` compiles the same file to WasmGC. |
@@ -66,4 +67,4 @@ The design decisions and what is not in the MVP are in [docs/design.md](docs/des
 
 ## Licence
 
-Apache License 2.0 (see `LICENSE`, `NOTICE`). The local copy of Bootstrap keeps its own MIT licence (`web/vendor/bootstrap/LICENSE`).
+Apache License 2.0 (see `LICENSE`, `NOTICE`). The local copy of Bootstrap keeps its own MIT licence (`web/vendor/bootstrap/LICENSE`); `src/Ui/Ink.fs` is derived from Foundation for Emails (MIT, `licenses/foundation-for-emails-LICENSE.md`).

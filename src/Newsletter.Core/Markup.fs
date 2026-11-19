@@ -4,16 +4,7 @@ module Newsletter.Markup
 
 open System.Text
 
-let escape (s: string) : string =
-    let sb = StringBuilder(s.Length + 8)
-    for c in s do
-        if c = '&' then sb.Append("&amp;") |> ignore
-        elif c = '<' then sb.Append("&lt;") |> ignore
-        elif c = '>' then sb.Append("&gt;") |> ignore
-        elif c = '"' then sb.Append("&quot;") |> ignore
-        elif c = '\'' then sb.Append("&#39;") |> ignore
-        else sb.Append(c) |> ignore
-    sb.ToString()
+let escape (s: string) : string = FSharp.Wasm.Ui.Html.escape s
 
 /// An address that is safe to put in `href`/`src`: http(s), mailto, tel, relative and #anchors, and the merge tags of sending
 /// services (`{{unsubscribe_url}}`).  Anything else (`javascript:`, `data:`) becomes `#`.

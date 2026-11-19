@@ -22,9 +22,11 @@ commands. That is why undo, import, selection and the announcements are tested w
 
 ## Output
 
-* **Email**: nested `role="presentation"` tables, a fixed-width container (600 px by default) that shrinks below 620 px, two
-  columns that stack, inline styles from the tokens, `mso` conditionals, a button that is a styled link for every client and a VML
-  `roundrect` for Outlook, a hidden preheader padded so that the first body words do not leak into the inbox preview.
+* **Email**: Foundation for Emails' structure (`FSharp.Wasm.Ui.Ink`): nested `role="presentation"` tables, a fixed-width container that
+  shrinks below its breakpoint (width + gutter), the 12-column grid whose columns stack, every style inlined from a stylesheet that is a
+  function of the tokens, Foundation's table button (a bordered cell around a link, no VML: Outlook shows square corners), a hidden
+  preheader padded so that the first body words do not leak into the inbox preview. Two things differ from Foundation on purpose: layout
+  tables say `role="presentation"`, and headings are bold and text does not hyphenate (the newsletter's own rules on top).
 * **Web**: semantic HTML (`main`, `h1…h3`, `blockquote`, `footer`), the profile's class names, the stylesheet linked.
 * **Text**: headings underlined, links as `label (address)`, the unsubscribe address spelled out.
 * Text from the author is escaped; links go through `safeUrl` (http, https, mailto, tel, relative, merge tags — everything else
@@ -47,7 +49,7 @@ that are still open, and this repository's CI builds with the compiler revision 
 * No image upload or asset library: images are addresses (hosted by you); an email client cannot take a local file anyway.
 * No per-block colours or padding: the profile's tokens apply to the whole issue. Overriding them per block is the next feature.
 * No sending, no list management, no ESP integration: the export is the product. Merge tags (`{{unsubscribe_url}}`) pass through.
-* The email is **not tested in real mail clients**. It follows the usual rules (tables, inline styles, conditionals, VML buttons) and
+* The email is **not tested in real mail clients**. It follows the usual rules (tables, inline styles, a stylesheet that stays for the small-screen rules) and
   the checks cover the accessibility basics, but a pass through Litmus, Email on Acid or your own inboxes is still needed before a send.
 * Dark mode of mail clients is not handled (`color-scheme` is not declared).
 * The Tailwind profile uses the Play CDN (development use); the class names are Tailwind 3's.

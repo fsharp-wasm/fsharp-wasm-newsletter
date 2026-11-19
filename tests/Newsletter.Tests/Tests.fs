@@ -147,31 +147,42 @@ let markup =
 // ───────────────────────────── renderers ─────────────────────────────
 let render =
     testList "Render" [
-        testCase "the email is a table layout with inline styles and Outlook conditionals" <| fun () ->
+        testCase "the email is Foundation's table grid with every style inlined" <| fun () ->
             let h = email Sample.issue
             has h "<!DOCTYPE html>"
             has h "<html lang=\"en\""
             has h "<table role=\"presentation\""
             has h "<!--[if mso]>"
-            has h "max-width:600px"
-            has h "class=\"stack\""
+            has h "class=\"container\""
+            has h "class=\"small-12 large-6 columns first\""
+            has h "class=\"small-12 large-6 columns last\""
+            has h "class=\"expander\""
+            has h "font-weight: bold"                                   // headings: the newsletter's own rule on top of Foundation's
+            has h "@media only screen and (max-width: 616px)"
             hasNot h "<link"
             hasNot h "<script"
             hasNot h "data-block"
             Expect.equal (count h "<h1") 1 "one h1"
+        testCase "the grid is Foundation's: a column is a twelfth of the width minus the gutter" <| fun () ->
+            let narrow = Render.email Render.exportOptions (bootstrap |> setToken "width" "580") Sample.issue
+            has narrow "width: 274px"                                  // large-6: 580 / 12 * 6 - 16
+            has narrow "width: 580px"                                  // the container
         testCase "the preheader is hidden and the subject is the title" <| fun () ->
             let h = email Sample.issue
-            has h "display:none;max-height:0;overflow:hidden;mso-hide:all"
+            has h "display: none; max-height: 0; overflow: hidden; mso-hide: all"
             has h "Three short stories about programs that stay out of the way."
             has h "<title>Small software, big difference</title>"
-        testCase "a button is bulletproof: VML for Outlook and a styled link for the rest" <| fun () ->
+        testCase "a button is a table: the label is a link, the colours come from the profile" <| fun () ->
             let h = email (blockOf Button (fun b -> { b with Text = "Go"; Url = "https://x.y"; Variant = Primary }))
-            has h "<v:roundrect"
+            has h "class=\"button"
             has h "href=\"https://x.y\""
-            has h "background-color:#0d6efd"
-            has h "color:#ffffff"
+            has h "background: #0d6efd"
+            has h "color: #ffffff"
             let o = email (blockOf Button (fun b -> { b with Text = "Go"; Url = "https://x.y"; Variant = Outline }))
-            has o "background-color:transparent"
+            has o "class=\"button outline"
+            has o "background: transparent"
+            let centred = email (blockOf Button (fun b -> { b with Text = "Go"; Url = "https://x.y"; Align = Center }))
+            has centred "float-center"
         testCase "text from the author cannot become markup" <| fun () ->
             let d = blockOf Paragraph (fun b -> { b with Text = "<script>alert(1)</script> & \"quotes\"" })
             let h = email d
@@ -189,9 +200,9 @@ let render =
         testCase "width and radius follow the profile and stay in range" <| fun () ->
             let p = bootstrap |> setToken "width" "700" |> setToken "radius" "0"
             let h = Render.email Render.exportOptions p Sample.issue
-            has h "max-width:700px"
+            has h "width: 700px"
             let wild = Render.email Render.exportOptions (bootstrap |> setToken "width" "99999") Sample.issue
-            has wild "max-width:900px"
+            has wild "width: 900px"
         testCase "the preview marks blocks and highlights the selection; the export does not" <| fun () ->
             let d = Sample.issue
             let o : Render.Options = { Preview = true; Selected = 2; Local = id }
@@ -386,4 +397,4 @@ let studio =
             has (Studio.output exported) "cdn.jsdelivr.net"
     ]
 
-let all : Test list = [ json; model; color; markup; render; codec; lint; studio ]
+let all : Test list = UiTests.suites @ [ json; model; color; markup; render; codec; lint; studio ]
