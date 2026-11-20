@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- The newsletter library: document model, framework profiles, the three renderers, JSON, checks and the designer's state
-       machine.  Pure F# on the subset fsharp-wasm compiles, so the same source runs under .NET (the tests) and as WasmGC (the designer). -->
+  <!-- The newsletter library: document model, framework profiles, the three renderers, checks and the designer's state
+       machine (JSON and the typed CSS/HTML come from fsharp-wasm-core: FSharp.Wasm.Data, FSharp.Wasm.Ui).  Pure F# on the subset fsharp-wasm compiles, so the same source runs under .NET (the tests) and as WasmGC (the designer). -->
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <LangVersion>preview</LangVersion>
@@ -9,10 +9,10 @@
     <NoWarn>$(NoWarn);NU1900;NETSDK1188</NoWarn>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../Ui/FSharp.Wasm.Ui.fsproj" />
+    <ProjectReference Include="../../lib/fsharp-wasm-core/FSharp.Wasm.Data/FSharp.Wasm.Data.fsproj" />
+    <ProjectReference Include="../../lib/fsharp-wasm-core/FSharp.Wasm.Ui/FSharp.Wasm.Ui.fsproj" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Json.fs" />
     <Compile Include="Model.fs" />
     <Compile Include="Color.fs" />
     <Compile Include="Profile.fs" />

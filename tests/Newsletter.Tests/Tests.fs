@@ -4,7 +4,7 @@ module Newsletter.Suites
 
 open Wasmecto
 open Newsletter
-open Newsletter.Json
+open FSharp.Wasm.Data
 open Newsletter.Model
 open Newsletter.Profile
 
@@ -18,35 +18,6 @@ let private blockOf (kind: Kind) (tweak: Block -> Block) : Document =
 
 let private email (d: Document) = Render.email Render.exportOptions defaultProfile d
 let private web (p: Profile) (d: Document) = Render.web Render.exportOptions p d
-
-// ───────────────────────────── JSON ─────────────────────────────
-let json =
-    testList "Json" [
-        testCase "scalars and containers round-trip" <| fun () ->
-            let v = JObj [ "a", JNum 1.0; "b", JArr [ JBool true; JNull; JStr "x" ]; "c", JObj [] ]
-            Expect.equal (parse (stringify false v)) (Ok v) "compact"
-            Expect.equal (parse (stringify true v)) (Ok v) "pretty"
-        testCase "strings are escaped and unescaped" <| fun () ->
-            let s = "quote \" backslash \\ newline \n tab \t unicode é — \u0001"
-            Expect.equal (parse (stringify false (JStr s))) (Ok(JStr s)) "round trip"
-            has (stringify false (JStr "a\"b")) "\\\""
-        testCase "numbers" <| fun () ->
-            Expect.equal (parse "[1, -2, 3.5, 1e2, 2.5E-1]") (Ok(JArr [ JNum 1.0; JNum -2.0; JNum 3.5; JNum 100.0; JNum 0.25 ])) "forms"
-            Expect.equal (stringify false (JNum 42.0)) "42" "whole numbers have no fraction"
-        testCase "\\u escapes" <| fun () ->
-            Expect.equal (parse "\"\\u0041\\u00e9\"") (Ok(JStr "Aé")) "decoded"
-        testCase "errors name the position" <| fun () ->
-            for bad in [ ""; "{"; "[1,]"; "{\"a\" 1}"; "tru"; "\"abc"; "[1] x"; "01x" ] do
-                match parse bad with
-                | Error m -> has m "position"
-                | Ok _ -> if bad <> "01x" then Expect.isTrue false ("should not parse: " + bad)
-        testCase "accessors fall back" <| fun () ->
-            let j = JObj [ "s", JStr "v"; "n", JNum 3.0; "b", JBool true ]
-            Expect.equal (str "s" "d" j) "v" "present"
-            Expect.equal (str "missing" "d" j) "d" "missing"
-            Expect.equal (int' "s" 7 j) 7 "wrong type falls back"
-            Expect.equal (bool' "b" false j) true "bool"
-    ]
 
 // ───────────────────────────── model ─────────────────────────────
 let model =
@@ -275,7 +246,7 @@ let codec =
             Expect.isTrue (match Codec.profileOfJson "[1]" with Error _ -> true | Ok _ -> false) "profile must be an object"
         testCase "a profile round-trips on its own" <| fun () ->
             let p = tailwind |> setToken "primary" "#123456"
-            Expect.equal (Codec.profileOfJson (Json.stringify true (Profile.toJson p))) (Ok p) "same"
+            Expect.equal (Codec.profileOfJson (Json.pretty (Profile.toJson p))) (Ok p) "same"
     ]
 
 // ───────────────────────────── checks ─────────────────────────────
@@ -375,7 +346,7 @@ let studio =
             let m, _ = send [ Studio.ImportChanged project; Studio.ApplyImport ] start
             Expect.equal m.Profile.Name "Tailwind CSS 3" "profile came with it"
             Expect.equal m.Doc.Blocks.Length Sample.issue.Blocks.Length "document came with it"
-            let prof = Json.stringify false (Profile.toJson (bootstrap |> setToken "primary" "#abcdef"))
+            let prof = Json.stringify (Profile.toJson (bootstrap |> setToken "primary" "#abcdef"))
             let m2, _ = send [ Studio.ImportChanged prof; Studio.ApplyImport ] start
             Expect.equal (token "primary" m2.Profile) "#abcdef" "profile only"
             Expect.equal m2.Doc start.Doc "document untouched"
@@ -397,4 +368,4 @@ let studio =
             has (Studio.output exported) "cdn.jsdelivr.net"
     ]
 
-let all : Test list = UiTests.suites @ [ json; model; color; markup; render; codec; lint; studio ]
+let all : Test list = [ model; color; markup; render; codec; lint; studio ]

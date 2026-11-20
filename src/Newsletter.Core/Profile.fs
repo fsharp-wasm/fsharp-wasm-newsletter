@@ -3,7 +3,7 @@
 /// stylesheet that makes those classes mean something.  Bootstrap 5.3 is the default; every part can be edited.
 module Newsletter.Profile
 
-open Newsletter.Json
+open FSharp.Wasm.Data
 
 type TokenKind = ColorToken | TextToken | NumberToken
 
@@ -113,11 +113,11 @@ let toJson (p: Profile) : Json =
 
 let ofJson (j: Json) : Profile =
     let pairs (name: string) (fallback: (string * string) list) =
-        match field name j with
+        match Json.field name j with
         | Some(JObj fields) -> fields |> List.choose (fun (k, v) -> match v with JStr s -> Some(k, s) | JNum n -> Some(k, string n) | _ -> None)
         | _ -> fallback
-    { Name = str "name" "Custom" j
-      Stylesheet = str "stylesheet" "" j
-      Script = str "script" "" j
+    { Name = Json.stringOr "name" "Custom" j
+      Stylesheet = Json.stringOr "stylesheet" "" j
+      Script = Json.stringOr "script" "" j
       Tokens = pairs "tokens" []
       Classes = pairs "classes" [] }

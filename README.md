@@ -23,7 +23,7 @@ The designer's own interface is plain **Bootstrap 5.3** — deliberately not the
 another matter, and Bootstrap is not made for email: mail clients ignore external stylesheets and, in Outlook's case, do not know Flexbox or
 Grid. So:
 
-* The **email** is built on **Foundation for Emails**' tables (see [docs/ui.md](docs/ui.md)): the stylesheet is a function of the profile's
+* The **email** is built on **Foundation for Emails**' tables (see [its documentation](https://github.com/fsharp-wasm/fsharp-wasm-core/blob/develop/docs/ui.md)): the stylesheet is a function of the profile's
   **tokens** (colours, font stack, base size, corner radius, content width) and an inliner writes it into the elements. The Bootstrap profile
   carries Bootstrap's palette (`#0d6efd`, `#212529`, …), so the email looks like a Bootstrap page without using a line of Bootstrap CSS.
 * The **web version** is real Bootstrap (or Tailwind): it links the stylesheet and uses the **class map** (`btn btn-primary`, `container`, …).
@@ -38,7 +38,7 @@ compile your own CSS and put its address in the stylesheet field.
 git submodule update --init                    # lib/runtime (HTML/Elmish library + JS glue), lib/fsharp-wasm-core, lib/wasmecto
 source build/env.sh                            # FSHARP_WASM_CORE_DIR
 
-# the libraries and their 77 checks, under .NET
+# the 53 checks of the newsletter library (and the 29 of the libraries it uses, which run in fsharp-wasm-core), under .NET
 bash build/test.sh dotnet
 
 # as WebAssembly GC: a compiler and wasm-tools
@@ -55,16 +55,16 @@ npm ci && node tests/e2e/designer.mjs         # the designer in Chromium (Playwr
 
 | path | what it is |
 |---|---|
-| `src/Ui` | **typed CSS and HTML for the web and for email**, no dependencies (see [docs/ui.md](docs/ui.md)): `Color` (hex, hsl, oklch, WCAG contrast), `Style` (values, selectors, rules, a renderer, merging), `Html` (a document tree that is pure data), `Inline` (the inliner), `Ink` (Foundation for Emails as F#). |
-| `src/Newsletter.Core` | the library, pure F#: `Model` (blocks, fields, operations), `Profile`, `Markup`, `Render` (email on `Ink`, web, text), `Codec` + `Json`, `Lint`, `Color`, and `Studio` — the designer as a state machine (`update` is pure and says which effects to carry out). Runs under .NET and as WasmGC. |
+| `lib/fsharp-wasm-core` | submodule: the standard libraries this program is built on — `FSharp.Wasm.Data` (JSON, numbers) and `FSharp.Wasm.Ui` (typed CSS and HTML, the inliner, Foundation for Emails as F#; [documentation](https://github.com/fsharp-wasm/fsharp-wasm-core/blob/develop/docs/ui.md)) — and the base library the compiler needs. |
+| `src/Newsletter.Core` | the library, pure F#: `Model` (blocks, fields, operations), `Profile`, `Markup`, `Render` (email on `Ink`, web, text), `Codec`, `Lint`, `Color`, and `Studio` — the designer as a state machine (`update` is pure and says which effects to carry out). Runs under .NET and as WasmGC. |
 | `src/Newsletter.Designer` | the interface: `View` (Bootstrap markup on the `Browser.Html` DSL) and `NewsletterDesigner` (hosts the program, local storage, clipboard). Compiled to `dist/NewsletterDesigner.wasm`. |
 | `web/` | the page, a few lines of CSS, a local copy of Bootstrap 5.3.3 (MIT, `web/vendor/bootstrap`). The page does two things for the module: it relays clicks from the sandboxed preview frame and it starts downloads. |
 | `tests/Newsletter.Tests` | the suites, written with [Wasmecto](https://github.com/fsharp-wasm/fsharp-wasmecto); `Newsletter.WasmTests` compiles the same file to WasmGC. |
 | `tests/e2e/designer.mjs` | the compiled designer driven in Chromium: editing, undo, keyboard, import/export, reload, axe-core. |
-| `lib/runtime`, `lib/fsharp-wasm-core`, `lib/wasmecto` | submodules: the HTML/Elmish library and JS glue, the F# base library, the test framework. |
+| `lib/runtime`, `lib/wasmecto` | submodules: the HTML/Elmish library and JS glue, the test framework. |
 
 The design decisions and what is not in the MVP are in [docs/design.md](docs/design.md).
 
 ## Licence
 
-Apache License 2.0 (see `LICENSE`, `NOTICE`). The local copy of Bootstrap keeps its own MIT licence (`web/vendor/bootstrap/LICENSE`); `src/Ui/Ink.fs` is derived from Foundation for Emails (MIT, `licenses/foundation-for-emails-LICENSE.md`).
+Apache License 2.0 (see `LICENSE`, `NOTICE`). The local copy of Bootstrap keeps its own MIT licence (`web/vendor/bootstrap/LICENSE`); the email stylesheet comes from `FSharp.Wasm.Ui` in fsharp-wasm-core, which ports Foundation for Emails (MIT; the text is in `licenses/foundation-for-emails-LICENSE.md` here and in core).

@@ -6,7 +6,6 @@ Licensed under the Apache License, Version 2.0 (see LICENSE).
 This repository includes a copy of the Bootstrap 5.3.3 stylesheet (web/vendor/bootstrap), which is
 Copyright 2011-2024 The Bootstrap Authors and licensed under the MIT License (see web/vendor/bootstrap/LICENSE).
 
-src/Ui/Ink.fs is a port to F# of the grid, the components and the stylesheet of Foundation for Emails
-(https://github.com/foundation/foundation-emails): its Sass sources (scss/) were read and their rules, numbers and
-table structure written as typed F#.  Foundation for Emails is Copyright (c) 2017 Foundation, inc. and licensed
-under the MIT License (see licenses/foundation-for-emails-LICENSE.md).
+The email stylesheet and markup come from FSharp.Wasm.Ui (fsharp-wasm-core), whose Ink module is a port to F# of the grid, the
+components and the stylesheet of Foundation for Emails (https://github.com/foundation/foundation-emails), Copyright (c) 2017 Foundation, inc.,
+MIT License (see licenses/foundation-for-emails-LICENSE.md).

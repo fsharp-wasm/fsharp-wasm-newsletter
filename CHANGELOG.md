@@ -21,3 +21,10 @@
   bold headings, no hyphenation. (Outlook's VML button is gone: Foundation's table button shows square corners in Outlook.)
 * Deployable on Cloudflare as a static site under a strict content security policy (`docs/deploy.md`).
 * 77 checks under .NET and as WebAssembly GC (from 58). The compiler fixes this needed are in `fsharp-wasm` (float `%`, `String.EndsWith`).
+
+## 0.3.0 — on the standard libraries of fsharp-wasm-core
+
+* JSON and the typed CSS/HTML library moved to `fsharp-wasm-core` (`FSharp.Wasm.Data`, `FSharp.Wasm.Ui`) and are used from there: the
+  newsletter no longer carries a JSON parser or the Ui sources. The JSON is the union of what the backend and the newsletter each had: a
+  nesting limit and strict string rules (the backend's), the position of the first error and a pretty printer (the newsletter's).
+* 53 checks here, 29 in core for the libraries (82 together, from 77), under .NET and as WebAssembly GC.

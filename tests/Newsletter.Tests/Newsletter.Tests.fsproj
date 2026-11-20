@@ -9,7 +9,6 @@
     <FSHARP_WASM_CORE_DIR Condition="'$(FSHARP_WASM_CORE_DIR)' == ''">$(MSBuildThisFileDirectory)../../lib/fsharp-wasm-core</FSHARP_WASM_CORE_DIR>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="UiTests.fs" />
     <Compile Include="Tests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
