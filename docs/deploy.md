@@ -1,4 +1,4 @@
-# Deploying to Cloudflare
+# Deploying to Cloudflare and GitHub Pages
 
 The designer is a **static site**: `index.html`, a few kilobytes of JavaScript glue, Bootstrap's CSS and one WebAssembly module
 (about 250 KB, 78 KB gzipped). Nothing runs on the server, nothing is uploaded, there is no database. Cloudflare serves the files
@@ -33,3 +33,27 @@ bash build/build.sh && bash build/site.sh
 node build/serve-site.mjs 8081        # http://127.0.0.1:8081/ under the headers of site/_headers
 npx wrangler@4.162.0 dev              # or: Cloudflare's own local runtime
 ```
+
+## GitHub Pages
+
+The same site is published to GitHub Pages by `.github/workflows/pages.yml` — from the `pages` artifact of a CI run, which is the
+`site` package with two changes made by `build/pages.mjs`:
+
+- Pages cannot send response headers and ignores `_headers`. The one that matters for a page that runs WebAssembly, the **content
+  security policy**, is a `<meta http-equiv>` as the first element of `<head>` now, taken from the same line of `site/_headers`.
+  The other headers (nosniff, referrer policy, permissions policy, cross-origin-opener policy, the cache policy of the module) are
+  whatever Pages sends; they are not ours there.
+- A project site lives under `/<repository>/`. The page uses relative paths only, and CI checks that: the whole end-to-end suite runs
+  against `dist/pages` served under `/fsharp-wasm-newsletter`, including that the policy is enforced (a request to another origin is
+  blocked by `connect-src`) and that the module is served as `application/wasm`.
+
+| where | what |
+|---|---|
+| Settings → Pages → *Build and deployment* → Source | **GitHub Actions** (not "Deploy from a branch") |
+| Settings → Environments → `github-pages` | created by GitHub; its rules must allow the `main` branch |
+
+Then: Actions → Pages → *Run workflow*, or push to `main` (it publishes after a green CI run). The job prints the address and checks that
+it answers, that the policy is in the page and that the module is served as `application/wasm`.
+
+Cloudflare sends all headers of `site/_headers` and is the deployment with the full set; GitHub Pages is the one that needs no account
+beyond the repository.

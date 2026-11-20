@@ -10,9 +10,10 @@ const shots = fileURLToPath(new URL('../../docs/images/', import.meta.url));
 const axeSource = readFileSync(fileURLToPath(new URL('../../node_modules/axe-core/axe.min.js', import.meta.url)), 'utf8');
 const { check, failures } = checker();
 
-// E2E_SITE=dist/site: the deployed layout, served under the headers of site/_headers (a strict content security policy); default: the checkout
+// E2E_SITE=dist/site: the deployed layout, served under the headers of site/_headers (a strict content security policy); default: the checkout.
+// E2E_SITE=dist/pages E2E_PREFIX=/fsharp-wasm-newsletter: the GitHub Pages layout (the policy is a <meta>, there are no headers, the site lives under a path).
 const siteDir = process.env.E2E_SITE ? fileURLToPath(new URL(`../../${process.env.E2E_SITE}`, import.meta.url)) : null;
-const { server, base } = siteDir ? await serveSite(siteDir, 0) : await serve(root, 0);
+const { server, base } = siteDir ? await serveSite(siteDir, 0, process.env.E2E_PREFIX ?? '') : await serve(root, 0);
 const pageUrl = siteDir ? `${base}/index.html` : `${base}/web/index.html`;
 const { browser, page, errors } = await launch();
 await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
@@ -37,9 +38,18 @@ await open();
 
 // ── the deployed layout is served under a strict content security policy and still works ──
 if (siteDir) {
-  const csp = (await firstResponse.headerValue('content-security-policy')) ?? '';
-  check('the site is served under a content security policy', csp.includes("default-src 'self'") && csp.includes("object-src 'none'"), csp);
-  check('the module is served as application/wasm with a cache policy', await page.evaluate(async () => { const r = await fetch('NewsletterDesigner.wasm'); return r.headers.get('content-type') === 'application/wasm' && /max-age/.test(r.headers.get('cache-control') ?? ''); }));
+  // the policy comes as a header (Cloudflare) or as a <meta> (GitHub Pages cannot send headers); either way it must be enforced
+  const header = (await firstResponse.headerValue('content-security-policy')) ?? '';
+  const meta = await page.evaluate(() => document.querySelector('meta[http-equiv="Content-Security-Policy"]')?.content ?? '');
+  const csp = header || meta;
+  check(`the site is served under a content security policy (${header ? 'header' : 'meta'})`, csp.includes("default-src 'self'") && csp.includes("object-src 'none'"), csp);
+  check('the policy is enforced: a request to another origin is blocked by connect-src', await page.evaluate(() => new Promise((resolve) => {
+    document.addEventListener('securitypolicyviolation', (e) => resolve(e.violatedDirective), { once: true });
+    fetch('https://csp-probe.invalid/').catch(() => {});
+    setTimeout(() => resolve('no violation'), 3000);
+  })) === 'connect-src');
+  check('the module is served as application/wasm', await page.evaluate(async () => (await fetch('NewsletterDesigner.wasm')).headers.get('content-type') === 'application/wasm'));
+  if (header) check('the module has a cache policy', await page.evaluate(async () => /max-age/.test((await fetch('NewsletterDesigner.wasm')).headers.get('cache-control') ?? '')));
 }
 
 // ── the first screen ──
@@ -179,7 +189,9 @@ await page.screenshot({ path: `${shots}designer.png` });
 await page.getByRole('button', { name: 'Theme', exact: true }).click();
 await page.screenshot({ path: `${shots}designer-theme.png` });
 
-check('no errors in the page console', errors.length === 0, errors.slice(0, 3).join(' | '));
+// (the policy probe above provokes two console errors on purpose)
+const unexpected = errors.filter((e) => !e.includes('csp-probe.invalid'));
+check('no errors in the page console', unexpected.length === 0, unexpected.slice(0, 3).join(' | '));
 await browser.close();
 server.close();
 console.log(failures() === 0 ? '\nall checks passed' : `\n${failures()} check(s) failed`);

@@ -1,0 +1,73 @@
+name: Pages
+
+# Publishes what CI built and tested — the `pages` artifact of a CI run (the site with its content security policy as a <meta>), not a
+# rebuild — to GitHub Pages.  docs/deploy.md says what the repository needs (Settings → Pages → Source: GitHub Actions).
+#
+#   automatic  after a successful CI run on main
+#   manual     Actions → Pages → Run workflow (optionally the CI run to publish)
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      run-id:
+        description: "CI run whose `pages` artifact is published (default: the latest successful CI run on main)"
+        default: ""
+
+permissions:
+  contents: read
+  actions: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  GH_REPO: ${{ github.repository }}
+
+jobs:
+  pages:
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    steps:
+      - name: Which CI run
+        id: run
+        env:
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          INPUT_RUN_ID: ${{ inputs.run-id }}
+        run: |
+          run_id="$WORKFLOW_RUN_ID"
+          [ -n "$run_id" ] || run_id="$INPUT_RUN_ID"
+          [ -n "$run_id" ] || run_id=$(gh run list --workflow ci.yml --branch main --event push --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          [ -n "$run_id" ] || { echo "::error::no successful CI run on main to publish"; exit 1; }
+          echo "id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "Publishing the \`pages\` artifact of CI run $run_id" >> "$GITHUB_STEP_SUMMARY"
+      - name: The package CI built and tested
+        run: gh run download "${{ steps.run.outputs.id }}" --name pages --dir dist/pages
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist/pages
+      - name: Publish
+        id: deployment
+        uses: actions/deploy-pages@v4
+      - name: The live site answers
+        run: |
+          url="${{ steps.deployment.outputs.page_url }}"
+          for i in 1 2 3 4 5 6; do
+            code=$(curl -s -o /tmp/index.html -w '%{http_code}' "$url") && [ "$code" = 200 ] && break
+            sleep 10
+          done
+          [ "$code" = 200 ] || { echo "::error::the live site answered $code"; exit 1; }
+          grep -q 'Newsletter Designer' /tmp/index.html
+          grep -q 'http-equiv="Content-Security-Policy"' /tmp/index.html
+          curl -sI "${url}NewsletterDesigner.wasm" | tr -d '\r' | grep -iE '^content-type: application/wasm'
+          echo "Live: $url" >> "$GITHUB_STEP_SUMMARY"

@@ -48,6 +48,7 @@ bash build/test.sh wasm                        # the same checks compiled to Was
 bash build/build.sh                            # dist/NewsletterDesigner.wasm
 bash build/serve.sh                            # http://127.0.0.1:8080/web/
 bash build/site.sh && node build/serve-site.mjs  # the deployable site, under the production headers (docs/deploy.md)
+node build/pages.mjs                          # the same site for GitHub Pages: the policy as a <meta>, no headers (docs/deploy.md)
 npm ci && node tests/e2e/designer.mjs         # the designer in Chromium (Playwright)
 ```
 

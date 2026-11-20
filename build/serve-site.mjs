@@ -1,5 +1,6 @@
 // Serves dist/site the way Cloudflare does: static files, and the response headers of its _headers file.
 //   node build/serve-site.mjs [port] [dir]
+// `prefix` serves the site under a path (GitHub Pages serves a project site at /<repository>/): requests outside it are 404.
 import http from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
@@ -19,11 +20,13 @@ export const parseHeaders = (text) => {
 };
 const matches = (pattern, path) => new RegExp("^" + pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$").test(path);
 
-export const serveSite = (root, port = 0) => new Promise(async (resolve) => {
+export const serveSite = (root, port = 0, prefix = "") => new Promise(async (resolve) => {
   const rules = parseHeaders(await readFile(join(root, "_headers"), "utf8").catch(() => ""));
   const server = http.createServer(async (req, res) => {
     try {
-      const path = decodeURIComponent(new URL(req.url, "http://x").pathname);
+      const raw = decodeURIComponent(new URL(req.url, "http://x").pathname);
+      if (prefix && raw !== prefix && !raw.startsWith(prefix + "/")) throw new Error("outside the prefix");
+      const path = raw.slice(prefix.length) || "/";
       let file = normalize(join(root, path));
       if (!file.startsWith(root)) throw new Error("outside");
       if (extname(file) === "") file = join(file, "index.html");
@@ -33,7 +36,7 @@ export const serveSite = (root, port = 0) => new Promise(async (resolve) => {
       res.writeHead(200, headers);
       res.end(body);
     } catch { res.writeHead(404); res.end("not found"); }
-  }).listen(port, () => resolve({ server, base: `http://127.0.0.1:${server.address().port}` }));
+  }).listen(port, () => resolve({ server, base: `http://127.0.0.1:${server.address().port}${prefix}` }));
 });
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

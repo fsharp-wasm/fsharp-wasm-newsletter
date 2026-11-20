@@ -99,6 +99,11 @@ jobs:
         run: bash build/site.sh
       - name: Site in Chromium, under the production headers
         run: E2E_SITE=dist/site node tests/e2e/designer.mjs
+      # GitHub Pages cannot send headers: the policy becomes a <meta>, and the site lives under /<repository>/
+      - name: Site as GitHub Pages serves it (policy as <meta>, under a path)
+        run: |
+          node build/pages.mjs dist/site dist/pages
+          E2E_SITE=dist/pages E2E_PREFIX=/${GITHUB_REPOSITORY#*/} node tests/e2e/designer.mjs
       - name: Cloudflare dry run
         run: |
           grep -E '^[A-Z_]+=' .github/tool-versions.env >> "$GITHUB_ENV"
@@ -108,6 +113,11 @@ jobs:
         with:
           name: site
           path: dist/site
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        with:
+          name: pages
+          path: dist/pages
           if-no-files-found: error
 
       - uses: actions/upload-artifact@v7
