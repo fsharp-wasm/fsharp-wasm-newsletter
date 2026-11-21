@@ -7,3 +7,6 @@
 [submodule "lib/wasmecto"]
 	path = lib/wasmecto
 	url = ../fsharp-wasmecto
+[submodule "lib/graphics"]
+	path = lib/graphics
+	url = ../fsharp-wasm-graphics
