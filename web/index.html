@@ -18,20 +18,9 @@
     const { boot } = await import(runtime + "boot.js");
     await boot({ wasm: new URL(wasm, import.meta.url), entry: "start" });
 
-    // Two things the page does for the module, in a few lines each; the designer itself is F#.
-    // 1. The preview frame is sandboxed (scripts only, no access to this page) and says which block was clicked, and where it
-    //    is scrolled: a click selects the block in the structure; a new document keeps the scroll position.
-    let scroll = 0;
-    const frame = () => document.querySelector("iframe.preview-frame");
-    addEventListener("message", (e) => {
-      const f = frame();
-      if (!f || e.source !== f.contentWindow) return;
-      const d = e.data ?? {};
-      if (d.block) document.querySelector(`[data-select="${CSS.escape(String(d.block))}"]`)?.click();
-      else if (typeof d.scroll === "number") scroll = d.scroll;
-      else if (d.ready) f.contentWindow.postMessage({ scroll }, "*");
-    });
-    // 2. Download: a button names the file and the element that holds the text.
+    // One thing the page does for the module, in a few lines; the designer itself is F#.  (The preview frame is sandboxed and talks to the module through
+    // messages: that relay is F# too, Browser.Events.onFrameMessage.)
+    // Download: a button names the file and the element that holds the text.
     document.addEventListener("click", (e) => {
       const b = e.target.closest?.("[data-download]");
       const src = b && document.querySelector(b.dataset.source);

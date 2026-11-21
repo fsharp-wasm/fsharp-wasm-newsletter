@@ -10,6 +10,13 @@ open Newsletter.Profile
 
 let private has (haystack: string) (needle: string) = Expect.stringContains haystack needle ("contains " + needle)
 let private hasNot (haystack: string) (needle: string) = Expect.isFalse (haystack.Contains needle) ("does not contain " + needle)
+
+/// How often a text occurs in another (no String.Split: the suites run as WasmGC too).
+let private occurrences (needle: string) (text: string) : int =
+    let mutable n = 0
+    for i in 0 .. text.Length - needle.Length do
+        if text.Substring(i, needle.Length) = needle then n <- n + 1
+    n
 let private count (haystack: string) (needle: string) : int = (haystack.Split([| needle |], System.StringSplitOptions.None)).Length - 1
 
 let private blockOf (kind: Kind) (tweak: Block -> Block) : Document =
@@ -470,6 +477,62 @@ let studio =
             let first, _ = send [ Studio.DragPress(Studio.DragNew Footer, 500.0, 20.0); Studio.DragMove(100.0, 30.0, slots); Studio.DragRelease(100.0, 30.0, slots) ] start
             Expect.equal (first.Doc.Blocks |> List.map (fun b -> b.Kind)) [ Footer ] "one block"
             Expect.equal first.Selected (Some first.Doc.Blocks.[0].Id) "selected"
+        // ── what the preview frame says ──
+        testCase "a click in the preview selects the block, and what it says about itself is kept" <| fun () ->
+            let m, _ = send [ Studio.Add Heading; Studio.Add Paragraph; Studio.Select None ] start
+            let id = m.Doc.Blocks.[1].Id
+            let sel, _ = send [ Studio.FromPreview (sprintf "{\"block\":\"%d\"}" id) ] m
+            Expect.equal sel.Selected (Some id) "the block that was clicked"
+            Expect.equal sel.Panel Studio.PBlock "its settings are shown"
+            let none, fx = send [ Studio.FromPreview "{\"block\":\"99\"}"; Studio.FromPreview "not json"; Studio.FromPreview "[1,2]"; Studio.FromPreview "{}" ] m
+            Expect.equal none.Doc m.Doc "nothing else changes the document"
+            Expect.equal fx [] "and nothing is said back"
+            let scrolled, _ = send [ Studio.FromPreview "{\"scroll\":120}" ] m
+            let _, back = send [ Studio.FromPreview "{\"ready\":true}" ] scrolled
+            Expect.equal back [ Studio.ToPreview "{\"scroll\":120}" ] "a document that has loaded is put back where it was"
+        testCase "a text edited in place: the preview is kept as it was, the typing is one step of the log, and the preview follows again afterwards" <| fun () ->
+            let m, _ = send [ Studio.Add Heading; Studio.Select None ] start
+            let b = m.Doc.Blocks.[0]
+            let before = Studio.previewDocument m
+            let id = string b.Id
+            let editing, _ = send [ Studio.FromPreview (sprintf "{\"editing\":true,\"block\":\"%s\"}" id) ] m
+            Expect.isSome editing.Frozen "the editor is open"
+            let typed, fx =
+                send [ Studio.FromPreview (sprintf "{\"edit\":{\"block\":\"%s\",\"value\":\"N\"}}" id)
+                       Studio.FromPreview (sprintf "{\"edit\":{\"block\":\"%s\",\"value\":\"New\"}}" id)
+                       Studio.FromPreview (sprintf "{\"edit\":{\"block\":\"%s\",\"value\":\"New title\"}}" id) ] editing
+            Expect.equal typed.Doc.Blocks.[0].Text "New title" "the text of the block is what was typed"
+            Expect.equal (Studio.previewDocument typed) before "the preview is not rendered again while the editor is open"
+            Expect.isTrue (fx |> List.exists (fun e -> match e with Studio.Save _ -> true | _ -> false)) "and the project is kept"
+            Expect.equal (typed.History.Past.Length - m.History.Past.Length) 1 "one step of the log for the whole typing"
+            let closed, _ = send [ Studio.FromPreview "{\"editing\":false}" ] typed
+            has (Studio.previewDocument closed) "New title"
+            Expect.isNone closed.Frozen "the preview follows the document again"
+            let back, _ = send [ Studio.Undo ] closed
+            Expect.equal back.Doc.Blocks.[0].Text b.Text "undo takes the typing back at once"
+        testCase "anything else ends the editing, a block without a text and an unknown block are not edited, a number is a block as well" <| fun () ->
+            let m, _ = send [ Studio.Add Heading; Studio.Add Divider; Studio.Select None ] start
+            let h, d = m.Doc.Blocks.[0], m.Doc.Blocks.[1]
+            let editing, _ = send [ Studio.FromPreview (sprintf "{\"editing\":true,\"block\":%d}" h.Id) ] m
+            let moved, _ = send [ Studio.SetPanel Studio.PTheme ] editing
+            Expect.isNone moved.Frozen "a message that is not the frame's ends it: the preview is rendered again"
+            let kept, _ = send [ Studio.FromPreview "{\"scroll\":5}" ] editing
+            Expect.isSome kept.Frozen "what the frame says while it holds the editor does not"
+            let ignored, fx = send [ Studio.FromPreview (sprintf "{\"edit\":{\"block\":\"%d\",\"value\":\"x\"}}" d.Id); Studio.FromPreview "{\"edit\":{\"block\":\"77\",\"value\":\"x\"}}" ] m
+            Expect.equal ignored.Doc m.Doc "a divider has no text, and block 77 is none"
+            Expect.equal fx [] "nothing saved"
+        testCase "the preview marks the text that is edited in place, an export does not" <| fun () ->
+            let d = { emptyDocument with Blocks = [ { blank Heading 1 with Text = "Hi \"you\" & co" }; blank Divider 2; { blank Paragraph 3 with Text = "One.\n\nTwo." } ]; NextId = 4 }
+            let o : Render.Options = { Render.exportOptions with Preview = true; Selected = 1 }
+            for html in [ Render.email o defaultProfile d; Render.web o defaultProfile d ] do
+                has html "data-edit-text=\"Hi &quot;you&quot; &amp; co\""
+                has html "data-edit-text=\"One.\n\nTwo.\""
+                Expect.equal (occurrences "data-edit-text=\"" html) 2 "the heading and the paragraph, not the divider"
+                has html "'__edit'"
+            hasNot (Render.email Render.exportOptions defaultProfile d) "data-edit-text"
+            hasNot (Render.web Render.exportOptions defaultProfile d) "data-edit-text"
+            hasNot (Render.web Render.exportOptions defaultProfile d) "data-block"
+            has (Render.web o defaultProfile d) "<div data-block=\"3\""
     ]
 
 let all : Test list = [ model; color; markup; render; codec; lint; studio ]

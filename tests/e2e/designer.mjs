@@ -113,6 +113,26 @@ check('and the preview follows', await poll(async () => (await frame().locator('
 await frame().locator('h2').first().click();
 check('a click in the preview selects that block', await poll(async () => (await page.locator('ol[aria-label^="Blocks"] [aria-current=true]').innerText()).startsWith('Heading')));
 check('the selected block is outlined in the preview', await poll(async () => (await frame().locator('[data-selected]').count()) === 1));
+// ── editing the text in place: a click on the block that is selected opens an editor over it ──
+const heading = frame().locator('h2').first();
+const headingText = await heading.innerText();
+await frame().locator('body').evaluate(() => { window.__sameDocument = 'yes'; });          // this document: a render again would make a new one
+await heading.click();                                                                      // the block is selected already
+const editor = frame().locator('#__edit');
+check('a click on the selected block opens an editor over it, with the text as it is written', await poll(async () => (await editor.inputValue()) === headingText));
+const look = await editor.evaluate((e) => { const c = getComputedStyle(e); return { weight: parseInt(c.fontWeight, 10), size: c.fontSize, family: c.fontFamily.slice(0, 30), background: c.backgroundColor }; });
+check('the editor has the look of the block', look.weight >= 600 && look.background !== 'rgba(0, 0, 0, 0)', JSON.stringify(look));
+await editor.fill('Edited in place');
+check('what is typed in the editor changes the block at once (its panel shows it)', await poll(async () => (await page.getByLabel('Text', { exact: true }).inputValue()) === 'Edited in place'));
+check('the preview is not rendered again while the editor is open', (await frame().locator('body').evaluate(() => window.__sameDocument)) === 'yes' && (await editor.count()) === 1);
+check('the editor keeps the focus while the page re-renders', await editor.evaluate((e) => e === document.activeElement));
+await editor.pressSequentially(' more');
+check('it goes on: more typing, the same editor', await poll(async () => (await page.getByLabel('Text', { exact: true }).inputValue()) === 'Edited in place more') && (await editor.count()) === 1);
+await page.keyboard.press('Escape');
+check('Escape closes the editor and the preview shows the text', await poll(async () => (await editor.count()) === 0 && (await heading.innerText()) === 'Edited in place more'));
+await page.getByRole('button', { name: 'Undo', exact: true }).click();
+check('undo takes the whole typing back in one step', await poll(async () => (await heading.innerText()) === headingText));
+
 const before = await outline().count();
 await page.getByRole('button', { name: /^Move Heading \d+ up$/ }).first().click();
 check('a block moves up (and the move is announced)', /moved up/.test(await page.locator('footer').innerText()));

@@ -42,6 +42,12 @@ let aligns : (Align * string) list = [ Left, "left"; Center, "center"; Right, "r
 let variants : (Variant * string) list = [ Primary, "primary"; Secondary, "secondary"; Outline, "outline" ]
 
 let kindKey (k: Kind) : string = kinds |> List.find (fun (x, _, _) -> x = k) |> fun (_, key, _) -> key
+/// Does the block have a text that is edited in place in the preview (its `Text`)?  The others (an image, a divider, a spacer, two columns) are edited in the panel.
+let hasInlineText (kind: Kind) : bool =
+    match kind with
+    | Heading | Paragraph | Quote | Button | Footer -> true
+    | Image | Divider | Spacer | Columns -> false
+
 let kindLabel (k: Kind) : string = kinds |> List.find (fun (x, _, _) -> x = k) |> fun (_, _, label) -> label
 let kindOfKey (s: string) : Kind option = kinds |> List.tryFind (fun (_, key, _) -> key = s) |> Option.map (fun (k, _, _) -> k)
 let alignKey (a: Align) : string = aligns |> List.find (fun (x, _) -> x = a) |> snd

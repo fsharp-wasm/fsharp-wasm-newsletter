@@ -5,6 +5,7 @@ module Newsletter.Studio
 open Newsletter.Model
 open Newsletter.Profile
 open FSharp.Math
+open FSharp.Wasm.Data
 open FSharp.Wasm.Edit
 open FSharp.Graphics.Interact
 
@@ -31,6 +32,10 @@ type Model =
       History: History<Snapshot>
       /// a block being dragged (and, once the pointer has moved, where it would drop)
       Drag: Session<Dragged>
+      /// the preview as it was when a text started to be edited in place: the frame is not rendered again while it holds the editor, or it would take it away
+      Frozen: string option
+      /// where the preview is scrolled, kept so that the next document of the frame is put back there
+      Scroll: int
       Panel: Panel
       Surface: Surface
       Medium: Medium
@@ -50,6 +55,8 @@ type Msg =
     | DragMove of x: float * y: float * slots: Measured list
     | DragRelease of x: float * y: float * slots: Measured list
     | DragCancel
+    /// what the preview frame said, as the JSON it posted: a click on a block, a text edited in place, its scroll position, that it has loaded
+    | FromPreview of string
     | Duplicate of int
     | EditField of id: int * Field * string
     | EditDoc of DocField * string
@@ -77,13 +84,15 @@ type Effect =
     /// the project as JSON, to keep in the browser
     | Save of string
     | Clipboard of string
+    /// something to say to the preview frame, as JSON
+    | ToPreview of string
 
 let private maxHistory = 100
 
 let init : Model =
     { Doc = Sample.issue; Profile = defaultProfile; Selected = None; History = History.create maxHistory; Drag = Idle
       Panel = PDocument; Surface = Preview; Medium = Email; Mobile = false; Output = OutEmail
-      Notice = ""; ImportText = ""; ImportError = "" }
+      Frozen = None; Scroll = 0; Notice = ""; ImportText = ""; ImportError = "" }
 
 let private snapshot (m: Model) : Snapshot = { Doc = m.Doc; Profile = m.Profile }
 
@@ -125,6 +134,12 @@ let previewHtml (m: Model) : string =
     match m.Medium with
     | Email -> Render.email o m.Profile m.Doc
     | Web -> Render.web o m.Profile m.Doc
+
+/// What the preview frame shows: the preview of the document, or, while a text is edited in place, the one that was shown when it started.
+let previewDocument (m: Model) : string =
+    match m.Frozen with
+    | Some html -> html
+    | None -> previewHtml m
 
 let findings (m: Model) : Lint.Finding list =
     Lint.check m.Profile m.Doc (Render.email Render.exportOptions m.Profile m.Doc).Length
@@ -193,7 +208,14 @@ let dragGhost (m: Model) : (string * float * float) option =
     | Dragging (DragNew kind, _, pointer, _) -> Some ("New " + (kindLabel kind).ToLower(), float pointer.X, float pointer.Y)
     | _ -> None
 
-let private step (msg: Msg) (m: Model) : Model * Effect list =
+/// A block number as the preview writes it (an attribute is text).
+let private blockOf (j: Json option) : int option =
+    match j with
+    | Some (JStr s) -> Numbers.parseInt s
+    | Some (JNum n) -> Some (int n)
+    | _ -> None
+
+let rec private step (msg: Msg) (m: Model) : Model * Effect list =
     match msg with
     | Add kind ->
         let doc, id = addBlock kind m.Selected m.Doc
@@ -234,6 +256,28 @@ let private step (msg: Msg) (m: Model) : Model * Effect list =
              | None, _ -> { m1 with Notice = "Dropped where it was." }, [])
          | None, Dragging (DragNew _, _, _, _) -> { m1 with Notice = "Dropped outside the blocks: nothing added." }, []
          | None, _ -> m1, [])
+    | FromPreview json ->
+        (match Json.tryParse json with
+         | None -> m, []
+         | Some j ->
+            (match Json.field "edit" j, Json.field "editing" j, blockOf (Json.field "block" j) with
+             // typing in the editor over a block: the text of that block
+             | Some e, _, _ ->
+                (match blockOf (Json.field "block" e) with
+                 | Some id when (match block id m with Some b -> hasInlineText b.Kind | None -> false) ->
+                    commit ("f:" + string id + ":" + fieldKey FText) "" (updateBlock id (setField FText (Json.stringOr "value" "" e)) m.Doc) m.Profile m, []
+                 | _ -> m, [])
+             // the editor is open (the preview stays as it is) or closed (it follows the document again)
+             | None, Some (JBool true), _ -> { m with Frozen = Some (previewHtml m) }, []
+             | None, Some _, _ -> { m with Frozen = None }, []
+             // a click on a block selects it
+             | None, None, Some id -> (step (Select (Some id)) m)
+             | None, None, None ->
+                (match Json.field "scroll" j, Json.field "ready" j with
+                 | Some (JNum n), _ -> { m with Scroll = int n }, []
+                 // the frame has loaded a document: put it back where it was
+                 | _, Some (JBool true) -> m, [ ToPreview ("{\"scroll\":" + string m.Scroll + "}") ]
+                 | _ -> m, [])))
     | DragCancel ->
         let said =
             match m.Drag with
@@ -284,6 +328,8 @@ let private step (msg: Msg) (m: Model) : Model * Effect list =
 /// The next state, and what the browser has to do: keep the project (whenever the document or the profile changed), copy.
 let update (msg: Msg) (m: Model) : Model * Effect list =
     let m2, effects = step msg m
+    // a preview that holds an editor is kept as it is while the frame talks (typing, scrolling); anything else lets it follow the document again
+    let m2 = (match msg with FromPreview _ -> m2 | _ -> { m2 with Frozen = None })
     let changed = m2.Doc <> m.Doc || m2.Profile <> m.Profile
     let isRestore = (match msg with Restore _ -> true | _ -> false)
     m2, (if changed && not isRestore then Save(Codec.projectToJson m2.Doc m2.Profile) :: effects else effects)

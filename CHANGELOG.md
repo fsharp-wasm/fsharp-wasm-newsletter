@@ -29,8 +29,11 @@
   nesting limit and strict string rules (the backend's), the position of the first error and a pretty printer (the newsletter's).
 * 53 checks here, 29 in core for the libraries (82 together, from 77), under .NET and as WebAssembly GC.
 
-## Unreleased — dragging blocks, icons
+## Unreleased — dragging blocks, icons, editing in place
 
+* Editing in place: a click on the block that is selected in the preview opens a text area over it, in the look of the block, with the text as it is written; typing changes the block at once and is one undo step;
+  Escape or leaving it closes it. The preview frame is not rendered again while it is open. The frame's messages (a click, the typing, its scroll position, that it has loaded) are parsed in F# (`Studio`:
+  `FromPreview`, tested under .NET and as WebAssembly GC); the page no longer relays them (`Browser.Events.onFrameMessage` and `postToFrame` of the runtime). 65 checks (from 61).
 * Icons: the glyphs of the buttons (↑ ↓ ⧉ ✕ ⠿) are drawn icons now, and the palette, the structure, the toggles, undo and redo, copy, download, import and the severity of a check have one. `FSharp.Wasm.Icons` (fsharp-wasm-core: typed shapes, 51 icons of Lucide) and SVG elements in the DOM reconciler of the runtime; the designer builds them as elements of the view, so a render keeps them. Decorative (`aria-hidden`), in the colour of the text; the names of the controls did not change except the palette buttons, which are "Add Heading" now. The designer module is 404 867 bytes (from 379 155: the shapes of the set).
 * A new block is dragged from the palette into the list (the ghost says `New quote`, a line shows where it goes); an empty list takes it as the first block. A click on a palette
   button still adds one, and the click that the browser sends after a drag, also after Escape, is swallowed. `Ops.insertAt` of `FSharp.Wasm.Edit` turns the place into the insert.

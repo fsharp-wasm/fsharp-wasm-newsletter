@@ -382,7 +382,7 @@ let private previewFrame (m: Model) : Node =
             class' (if m.Mobile then "preview-frame preview-mobile bg-white border-0 shadow-sm" else "preview-frame bg-white border-0 shadow-sm")
             attr "title" (if m.Medium = Email then "Preview of the email" else "Preview of the web version")
             attr "sandbox" "allow-scripts"
-            attr "srcdoc" (previewHtml m)
+            attr "srcdoc" (previewDocument m)
         }
     }
 

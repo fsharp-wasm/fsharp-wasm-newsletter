@@ -36,21 +36,45 @@ let private joinClasses (xs: string list) : string = xs |> List.filter (fun x ->
 
 let private attr (name: string) (value: string) : string = " " + name + "=\"" + escape value + "\""
 
-let private marker (o: Options) (b: Block) : string =
-    if not o.Preview then ""
+/// What the preview marks a block with: its number, whether it is the selected one, and, for a block whose text is edited in place, that text as it is written (the
+/// editor of the preview starts from it, not from the HTML it was made into).
+let private markers (o: Options) (b: Block) : (string * string) list =
+    if not o.Preview then []
     else
-        attr "data-block" (string b.Id)
-        + (if b.Id = o.Selected then attr "data-selected" "" else "")
+        [ "data-block", string b.Id ]
+        @ (if b.Id = o.Selected then [ "data-selected", "" ] else [])
+        @ (if hasInlineText b.Kind then [ "data-edit-text", b.Text ] else [])
 
-// The preview page talks to the designer through one message: "this block was clicked".  The preview runs in a sandboxed frame
-// (scripts only, no access to the designer's page), so what the user's content contains cannot reach the designer.
+let private marker (o: Options) (b: Block) : string =
+    markers o b |> List.map (fun (k, v) -> attr k v) |> String.concat ""
+
+// The preview page talks to the designer through messages: "this block was clicked", "this is where I am scrolled", "I have loaded", and, for a block whose
+// text is edited in place, what is typed.  The preview runs in a sandboxed frame (scripts only, no access to the designer's page), so what the user's content
+// contains cannot reach the designer.
+//
+// A click on a block selects it; a click on the block that is selected opens an editor over it (a text area with the text as it is written, in the look of the
+// block, in a colour that can be read on white: a button's text is white), because a double click is not possible: the first click selects, which renders the preview again.  Typing is posted at once, Escape or leaving the editor
+// closes it, and the designer renders the preview again with what was typed.
 let private previewHead : string =
     "<style>[data-block]{cursor:pointer}[data-block]:hover{outline:1px dashed #6c757d;outline-offset:-1px}"
     + "[data-selected]{outline:2px solid #0d6efd!important;outline-offset:-2px}</style>"
 
 let private previewScript : string =
-    "<script>addEventListener('click',function(e){var t=e.target.closest&&e.target.closest('[data-block]');"
-    + "if(t){e.preventDefault();parent.postMessage({block:t.getAttribute('data-block')},'*')}});"
+    "<script>"
+    + "function edit(t){if(document.getElementById('__edit'))return;"
+    + "var id=t.getAttribute('data-block'),src=t.querySelector('h1,h2,h3,p,a')||t,cs=getComputedStyle(src),r=t.getBoundingClientRect(),"
+    + "ta=document.createElement('textarea');ta.id='__edit';ta.value=t.getAttribute('data-edit-text');ta.setAttribute('aria-label','Edit the text in place');"
+    + "ta.style.cssText='position:absolute;box-sizing:border-box;margin:0;border:0;padding:4px 8px;resize:none;overflow:hidden;background:#fff;color:#212529;outline:2px solid #0d6efd;"
+    + "z-index:2147483647;left:'+(r.left+scrollX)+'px;top:'+(r.top+scrollY)+'px;width:'+r.width+'px';"
+    + "['fontFamily','fontSize','fontWeight','fontStyle','lineHeight','letterSpacing','textAlign'].forEach(function(k){ta.style[k]=cs[k]});"
+    + "function fit(){ta.style.height='auto';ta.style.height=Math.max(r.height,ta.scrollHeight)+'px'}"
+    + "document.body.appendChild(ta);fit();ta.focus();parent.postMessage({editing:true,block:id},'*');"
+    + "ta.addEventListener('input',function(){fit();parent.postMessage({edit:{block:id,value:ta.value}},'*')});"
+    + "ta.addEventListener('keydown',function(e){if(e.key==='Escape'){e.preventDefault();ta.blur()}});"
+    + "ta.addEventListener('blur',function(){ta.remove();parent.postMessage({editing:false},'*')})}"
+    + "addEventListener('click',function(e){var t=e.target.closest&&e.target.closest('[data-block]');"
+    + "if(!t)return;e.preventDefault();"
+    + "if(t.hasAttribute('data-selected')&&t.hasAttribute('data-edit-text'))edit(t);else parent.postMessage({block:t.getAttribute('data-block')},'*')});"
     + "addEventListener('scroll',function(){parent.postMessage({scroll:scrollY},'*')});"
     + "addEventListener('message',function(e){if(e.data&&typeof e.data.scroll==='number')scrollTo(0,e.data.scroll)});"
     + "parent.postMessage({ready:true},'*')</script>"
@@ -98,7 +122,7 @@ let private paragraphsOf (text: string) (attrs: (string * string) list) : Node l
 let private emailBlock (p: Profile) (o: Options) (b: Block) : Node =
     let one (kids: Node list) = Ink.grid12 false [ (12, 12, kids) ]
     let marked (n: Node) =
-        if o.Preview then Html.withAttrs ([ "data-block", string b.Id ] @ (if b.Id = o.Selected then [ "data-selected", "" ] else [])) n else n
+        if o.Preview then Html.withAttrs (markers o b) n else n
     let width = numOf "width" 320 900 p
     marked
         (match b.Kind with
@@ -143,7 +167,10 @@ let private webBlock (p: Profile) (o: Options) (b: Block) : string =
     let paras (klass: string) (s: string) = paragraphs s |> List.map (fun t -> "<p" + cls [ klass; alignClass ] + (if klass = c "p" then m else "") + ">" + inlineHtml "" t + "</p>") |> String.concat "\n"
     match b.Kind with
     | Heading -> let lv = string (clamp 1 3 b.Level) in "<h" + lv + cls [ c ("h" + lv); alignClass ] + m + ">" + escape b.Text + "</h" + lv + ">"
-    | Paragraph -> paras (c "p") b.Text
+    | Paragraph ->
+        // the preview marks a block as a whole: all its paragraphs, so that a click on any of them is the block (an export has no wrapper)
+        if o.Preview then "<div" + m + ">" + (paragraphs b.Text |> List.map (fun t -> "<p" + cls [ c "p"; alignClass ] + ">" + inlineHtml "" t + "</p>") |> String.concat "\n") + "</div>"
+        else paras (c "p") b.Text
     | Image ->
         let img = "<img" + attr "src" (safeUrl b.Url) + attr "alt" b.Alt + cls [ c "image" ] + attr "style" ("width:" + string (clamp 10 100 b.Size) + "%;height:auto") + ">"
         "<div" + cls [ alignClass ] + m + ">" + (if b.Link.Trim() = "" then img else "<a" + attr "href" (safeUrl b.Link) + ">" + img + "</a>") + "</div>"

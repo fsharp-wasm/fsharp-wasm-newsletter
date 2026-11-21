@@ -46,8 +46,12 @@ that are still open, and this repository's CI builds with the compiler revision 
 ## Not in the MVP
 
 * Drag and drop: the blocks of the structure list move by their handle, and a new block is dragged from the palette to where it should go (Escape cancels, one undo step
-  each; a click on a palette button still adds one, and the click that follows a drag is swallowed). Still missing: editing text in place in the preview. The Move buttons and the
+  each; a click on a palette button still adds one, and the click that follows a drag is swallowed). The Move buttons and the
   palette buttons stay as the keyboard way.
+* Editing in place: a click on the block that is selected opens a text area over it, in the look of the block, with the text as it is written (`**bold**` and all) — for a heading, a
+  paragraph, a quote, a button and a footer, their `Text`. The preview is not rendered again while it is open (the frame would take the editor away); Escape or leaving it closes it, and the typing
+  is one step of the undo log. A double click is not possible: the first click selects, which renders the preview again. It is a pointer convenience; the same field is in the panel for the
+  keyboard. Not edited in place: the second text of a quote and of two columns (a column is not a block), images, dividers and spacers.
 * No image upload or asset library: images are addresses (hosted by you); an email client cannot take a local file anyway.
 * No per-block colours or padding: the profile's tokens apply to the whole issue. Overriding them per block is the next feature.
 * No sending, no list management, no ESP integration: the export is the product. Merge tags (`{{unsubscribe_url}}`) pass through.
