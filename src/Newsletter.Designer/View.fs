@@ -120,18 +120,38 @@ let private palette (dispatch: Msg -> unit) : Node =
             }
     }
 
+/// The handle that drags a block: a press on it follows the pointer (the page captures it), the page reports the places of all blocks with every move, and Escape
+/// cancels.  A pointer is not everybody's way: the Move buttons beside it do the same with the keyboard.
+let private dragHandle (m: Model) (dispatch: Msg -> unit) (name: string) (id: int) : Node =
+    button {
+        type' "button"
+        class' "btn btn-sm btn-flat text-body-secondary px-1"
+        attr "style" "touch-action:none;cursor:grab;user-select:none"       // none: the page must not pan or select text under a drag
+        ariaLabel ("Drag " + name + " to another place, or use its Move buttons")
+        attr "title" ("Drag " + name)
+        onPointerDown (fun x y -> dispatch (DragPress(DragBlock id, x, y)))
+        onPointerMove (fun x y -> if dragActive m then dispatch (DragMove(x, y, Browser.Events.measureSlots ())))
+        onPointerUp (fun x y -> if dragActive m then dispatch (DragRelease(x, y, Browser.Events.measureSlots ())))
+        onPointerCancel (fun () -> dispatch DragCancel)
+        onKeyDown (fun key -> if key = "Escape" then dispatch DragCancel)
+        "⠿"
+    }
+
 let private outlineItem (m: Model) (dispatch: Msg -> unit) (index: int) (b: Block) : Node =
     let selected = (m.Selected = Some b.Id)
     let last = m.Doc.Blocks.Length - 1
     let name = kindLabel b.Kind + " " + string (index + 1)
+    let dragged = beingDragged m b.Id
     li {
         key' (string b.Id)
-        class' (if selected then "list-group-item p-1 border-primary bg-primary-subtle" else "list-group-item p-1")
+        data' "slot" (string b.Id)
+        class' ((if selected then "list-group-item p-1 border-primary bg-primary-subtle" else "list-group-item p-1") + (if dragged then " opacity-50" else ""))
         div {
             class' "d-flex align-items-center gap-1"
+            dragHandle m dispatch name b.Id
             button {
                 type' "button"
-                class' "btn btn-sm text-start flex-grow-1 text-truncate"
+                class' "btn btn-sm btn-flat text-start flex-grow-1 text-truncate"
                 data' "select" (string b.Id)
                 attrIf selected "aria-current" "true"
                 onClick (fun () -> dispatch (Select(Some b.Id)))
@@ -416,9 +436,35 @@ let private topBar (m: Model) (dispatch: Msg -> unit) : Node =
         span { class' "text-body-secondary small me-auto"; m.Doc.Name }
         div {
             class' "d-flex gap-2"
-            button { type' "button"; class' "btn btn-sm btn-outline-dark"; disabled m.Past.IsEmpty; onClick (fun () -> dispatch Undo); "Undo" }
-            button { type' "button"; class' "btn btn-sm btn-outline-dark"; disabled m.Future.IsEmpty; onClick (fun () -> dispatch Redo); "Redo" }
+            button { type' "button"; class' "btn btn-sm btn-outline-dark"; disabled (not (canUndo m)); onClick (fun () -> dispatch Undo); "Undo" }
+            button { type' "button"; class' "btn btn-sm btn-outline-dark"; disabled (not (canRedo m)); onClick (fun () -> dispatch Redo); "Redo" }
         }
+    }
+
+/// While a block is dragged: the line where it would drop, and its name under the pointer.  Neither takes the pointer (`pointer-events: none`), so the drop is
+/// decided by what is under the pointer, not by the overlay.
+let private dragOverlay (m: Model) : Node =
+    let px (v: float) : string = string (int v) + "px"
+    div {
+        match dropMark m with
+        | Some (x, y, w, h) ->
+            div {
+                class' "bg-primary rounded"
+                data' "dnd" "mark"
+                attr "style" ("position:fixed;pointer-events:none;z-index:1080;left:" + px x + ";top:" + px y + ";width:" + px w + ";height:" + px (max h 3.0))
+                attr "aria-hidden" "true"
+            }
+        | None -> ()
+        match dragGhost m with
+        | Some (label, x, y) ->
+            div {
+                class' "bg-primary text-white small rounded shadow px-2 py-1"
+                data' "dnd" "ghost"
+                attr "style" ("position:fixed;pointer-events:none;z-index:1090;left:" + px (x + 12.0) + ";top:" + px (y + 12.0))
+                attr "aria-hidden" "true"
+                label
+            }
+        | None -> ()
     }
 
 let view (m: Model) (dispatch: Msg -> unit) : Node =
@@ -434,6 +480,7 @@ let view (m: Model) (dispatch: Msg -> unit) : Node =
                 div { class' "col-12 col-lg-3 order-3"; right m dispatch }
             }
         }
+        dragOverlay m
         div { role "status"; attr "aria-live" "polite"; class' "visually-hidden"; m.Notice }
         footer {
             class' "border-top px-3 py-2 small text-body-secondary"

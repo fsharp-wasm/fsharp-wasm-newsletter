@@ -69,7 +69,7 @@ check('the field keeps focus while the page re-renders', await page.getByLabel('
 check('the change is announced to screen readers', (await page.locator('[role=status][aria-live=polite]').innerText()) !== '');
 
 // a text area keeps what is typed, and gives it back on undo (the morph must not overwrite it)
-await outline().nth(2).getByRole('button').first().click();
+await outline().nth(2).locator('button[data-select]').click();
 const area = page.getByLabel('Text', { exact: true });
 check('a paragraph is edited in a text area', (await area.evaluate((e) => e.tagName)) === 'TEXTAREA');
 await area.fill('First paragraph.\n\nSecond paragraph, with **bold** and [a link](https://example.com/a).');
@@ -95,6 +95,36 @@ await page.getByRole('button', { name: /^Duplicate / }).first().click();
 check('duplicating adds a block', (await outline().count()) === before + 1);
 await page.getByRole('button', { name: /^Delete / }).first().click();
 check('deleting removes it', (await outline().count()) === before);
+
+// ── dragging a block with the pointer: the handle, the ghost, the mark, the drop, undo, Escape ──
+const viewport = page.viewportSize();
+await page.setViewportSize({ width: 1400, height: 1600 });            // every block of the list is on screen: the pointer can reach all of them
+const kinds = () => outline().evaluateAll((els) => els.map((e) => e.querySelector('button[data-select]').innerText.split('\n')[0].trim()));
+const dnd = (what) => page.locator(`[data-dnd=${what}]`);
+const grab = async (i) => { const b = await outline().nth(i).locator('button[aria-label^="Drag"]').boundingBox(); await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2); await page.mouse.down(); };
+const order0 = await kinds();
+const lastBox = await outline().nth(order0.length - 1).boundingBox();
+await grab(0);
+check('a press that has not moved is not a drag: no ghost yet', (await dnd('ghost').count()) === 0);
+await page.mouse.move(lastBox.x + 60, lastBox.y - 40, { steps: 3 });
+check('once the pointer has moved, the block under it is shown as a ghost', await poll(async () => (await dnd('ghost').count()) === 1));
+await page.mouse.move(lastBox.x + 60, lastBox.y + lastBox.height - 4, { steps: 6 });    // the lower half of the last block
+check('a mark shows where it would drop', await poll(async () => (await dnd('mark').count()) === 1));
+check('the mark takes no pointer events', await dnd('mark').evaluate((e) => getComputedStyle(e).pointerEvents === 'none'));
+await page.mouse.up();
+const order1 = await kinds();
+check('dropping moves the first block behind the last', order1.length === order0.length && order1[order1.length - 1] === order0[0] && order1[0] === order0[1], `${order0.join(',')} -> ${order1.join(',')}`);
+check('the move by dragging is announced', await poll(async () => /moved by dragging/.test(await page.locator('footer').innerText())));
+check('the mark and the ghost are gone after the drop', (await dnd('mark').count()) === 0 && (await dnd('ghost').count()) === 0);
+await page.getByRole('button', { name: 'Undo', exact: true }).click();
+check('undo puts the dragged block back in one step', (await kinds()).join() === order0.join());
+await grab(1);
+await page.mouse.move(lastBox.x + 60, lastBox.y + lastBox.height - 4, { steps: 8 });
+await page.keyboard.press('Escape');
+check('Escape cancels the drag: nothing moved, no mark', await poll(async () => (await dnd('mark').count()) === 0 && (await dnd('ghost').count()) === 0) && (await kinds()).join() === order0.join());
+await page.mouse.up();
+check('releasing after Escape drops nothing', (await kinds()).join() === order0.join());
+await page.setViewportSize(viewport ?? { width: 1280, height: 720 });
 
 // ── the keyboard: everything has a name and can be reached by Tab; activate with Enter and Space ──
 await page.locator('#app').getByRole('button', { name: '+ Divider' }).focus();
@@ -164,7 +194,7 @@ check('a valid project is imported', (await page.getByLabel('Subject line').inpu
 
 // ── the page itself: axe-core (WCAG 2.0 / 2.1 / 2.2 A and AA), keyboard stops ──
 await page.getByRole('button', { name: 'Load sample', exact: true }).click();
-for (const [name, steps] of [['block panel', async () => { await page.getByRole('button', { name: 'Block', exact: true }).click(); await outline().nth(1).getByRole('button').first().click(); }],
+for (const [name, steps] of [['block panel', async () => { await page.getByRole('button', { name: 'Block', exact: true }).click(); await outline().nth(1).locator('button[data-select]').click(); }],
                             ['newsletter panel', async () => page.getByRole('button', { name: 'Newsletter', exact: true }).click()],
                             ['theme panel', async () => page.getByRole('button', { name: 'Theme', exact: true }).click()]]) {
   await steps();
@@ -178,13 +208,13 @@ for (let i = 0; i < 80; i++) {
   stops.add(await page.evaluate(() => { const e = document.activeElement; return e && e !== document.body ? (e.id || e.getAttribute('aria-label') || e.textContent.trim().slice(0, 24)) : ''; }));
 }
 check('the keyboard reaches many stops (all controls)', stops.size > 25, `${stops.size}`);
-const vis = await page.evaluate(() => { const e = document.activeElement; const o = getComputedStyle(e); return o.outlineStyle !== 'none' || o.boxShadow !== 'none'; });
-check('the focused control shows a focus indicator', vis);
+const focus = await page.evaluate(() => { const e = document.activeElement; const o = getComputedStyle(e); return { shown: o.outlineStyle !== 'none' || o.boxShadow !== 'none', element: `${e.tagName} ${e.id || e.getAttribute('aria-label') || e.className}` }; });
+check('the focused control shows a focus indicator', focus.shown, focus.element);
 
 // ── screenshots (docs) ──
 await page.setViewportSize({ width: 1440, height: 900 });
 await page.getByRole('button', { name: 'Block', exact: true }).click();
-await outline().nth(3).getByRole('button').first().click();
+await outline().nth(3).locator('button[data-select]').click();
 await page.screenshot({ path: `${shots}designer.png` });
 await page.getByRole('button', { name: 'Theme', exact: true }).click();
 await page.screenshot({ path: `${shots}designer-theme.png` });

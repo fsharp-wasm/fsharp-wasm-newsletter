@@ -28,3 +28,12 @@
   newsletter no longer carries a JSON parser or the Ui sources. The JSON is the union of what the backend and the newsletter each had: a
   nesting limit and strict string rules (the backend's), the position of the first error and a pretty printer (the newsletter's).
 * 53 checks here, 29 in core for the libraries (82 together, from 77), under .NET and as WebAssembly GC.
+
+## Unreleased — dragging blocks
+
+* A block of the structure list is dragged by its handle: a press captures the pointer, a line shows where it would drop, a ghost with its name follows the
+  pointer, Escape cancels, and the move is one undo step. Where it drops is decided by `FSharp.Graphics.Interact` (`fsharp-wasm-graphics`: the slot under the
+  pointer, before / after / into by where in the slot it is); the edit itself is `Ops.drop` of `FSharp.Wasm.Edit` (`fsharp-wasm-core`).
+* The history of the designer is `FSharp.Wasm.Edit.History` (with the coalescing of typing into one step) instead of its own past and future lists.
+* The focus ring of the flat buttons (a Bootstrap button without a variant has none).
+* 57 checks under .NET and as WebAssembly GC (from 53); the designer driven in Chromium drags a block with a real pointer, cancels with Escape and undoes.

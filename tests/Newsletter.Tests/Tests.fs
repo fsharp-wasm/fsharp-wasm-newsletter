@@ -313,10 +313,10 @@ let studio =
             let back, _ = send [ Studio.Undo ] typed
             Expect.equal back.Doc.Blocks.[0].Text (blank Heading 1).Text "one undo reverts the whole word"
             let other, _ = send [ Studio.EditField(1, FText, "a"); Studio.EditField(1, FAlign, "center"); Studio.EditField(1, FText, "ab") ] m1
-            Expect.equal other.Past.Length 4 "a different field starts a new step"
+            Expect.equal other.History.Past.Length 4 "a different field starts a new step"
         testCase "a change after undo drops the redo branch" <| fun () ->
             let m, _ = send [ Studio.Add Heading; Studio.Undo; Studio.Add Divider ] start
-            Expect.equal m.Future [] "no redo"
+            Expect.isFalse (Studio.canRedo m) "no redo"
         testCase "moves are announced; the ends are explained" <| fun () ->
             let m, _ = send [ Studio.Add Heading; Studio.Add Paragraph; Studio.Move(2, -1) ] start
             has m.Notice "moved up"
@@ -366,6 +366,58 @@ let studio =
             hasNot h "cdn.jsdelivr.net"
             let exported, _ = send [ Studio.SetOutput Studio.OutWeb ] m
             has (Studio.output exported) "cdn.jsdelivr.net"
+        // ── dragging a block ──
+        testCase "dragging a block to another place moves it, in one step of the log" <| fun () ->
+            let three, _ = send [ Studio.Add Heading; Studio.Add Paragraph; Studio.Add Divider; Studio.Select None ] start
+            let ids = three.Doc.Blocks |> List.map (fun b -> b.Id)
+            // the blocks are measured one above the other: 40 px high, 50 px apart, in a column 200 wide
+            let slots = ids |> List.mapi (fun i id -> (id, 0.0, float i * 50.0, 200.0, 40.0, false))
+            let moved, fx =
+                send [ Studio.DragPress(Studio.DragBlock ids.[0], 20.0, 20.0)       // on the first block
+                       Studio.DragMove(20.0, 60.0, slots)                            // beyond the threshold, over the second
+                       Studio.DragMove(20.0, 128.0, slots)                           // over the lower half of the third
+                       Studio.DragRelease(20.0, 128.0, slots) ] three
+            Expect.equal (moved.Doc.Blocks |> List.map (fun b -> b.Id)) [ ids.[1]; ids.[2]; ids.[0] ] "the first block is last now"
+            has moved.Notice "moved by dragging"
+            Expect.isTrue (fx |> List.exists (fun e -> match e with Studio.Save _ -> true | _ -> false)) "saved"
+            Expect.equal (moved.History.Past.Length - three.History.Past.Length) 1 "one step"
+            let back, _ = send [ Studio.Undo ] moved
+            Expect.equal (back.Doc.Blocks |> List.map (fun b -> b.Id)) ids "undo puts it back"
+        testCase "while a block is dragged the view has the mark and the ghost; neither stays after the drop" <| fun () ->
+            let two, _ = send [ Studio.Add Heading; Studio.Add Paragraph ] start
+            let ids = two.Doc.Blocks |> List.map (fun b -> b.Id)
+            let slots = ids |> List.mapi (fun i id -> (id, 0.0, float i * 50.0, 200.0, 40.0, false))
+            let dragging, _ = send [ Studio.DragPress(Studio.DragBlock ids.[0], 20.0, 20.0); Studio.DragMove(20.0, 90.0, slots) ] two
+            Expect.isTrue (Studio.dragActive dragging) "active"
+            Expect.isTrue (Studio.beingDragged dragging ids.[0]) "the first is the one dragged"
+            Expect.isSome (Studio.dropMark dragging) "a mark where it would drop (behind the second)"
+            Expect.isSome (Studio.dragGhost dragging) "a ghost"
+            let over, _ = send [ Studio.DragMove(20.0, 10.0, slots) ] dragging
+            Expect.isNone (Studio.dropMark over) "over itself the drop would change nothing: no mark"
+            let dropped, _ = send [ Studio.DragRelease(20.0, 90.0, slots) ] dragging
+            Expect.isFalse (Studio.dragActive dropped) "idle again"
+            Expect.isNone (Studio.dropMark dropped) "no mark"
+        testCase "a press that does not move is a click: nothing changes" <| fun () ->
+            let two, _ = send [ Studio.Add Heading; Studio.Add Paragraph ] start
+            let ids = two.Doc.Blocks |> List.map (fun b -> b.Id)
+            let slots = ids |> List.mapi (fun i id -> (id, 0.0, float i * 50.0, 200.0, 40.0, false))
+            let clicked, fx = send [ Studio.DragPress(Studio.DragBlock ids.[0], 20.0, 20.0); Studio.DragMove(22.0, 21.0, slots); Studio.DragRelease(22.0, 21.0, slots) ] two
+            Expect.equal clicked.Doc two.Doc "the document is as it was"
+            Expect.equal clicked.History.Past.Length two.History.Past.Length "no step"
+            Expect.equal fx [] "nothing saved"
+        testCase "escape cancels a drag, and dropping a block where it is changes nothing" <| fun () ->
+            let two, _ = send [ Studio.Add Heading; Studio.Add Paragraph ] start
+            let ids = two.Doc.Blocks |> List.map (fun b -> b.Id)
+            let slots = ids |> List.mapi (fun i id -> (id, 0.0, float i * 50.0, 200.0, 40.0, false))
+            let cancelled, _ = send [ Studio.DragPress(Studio.DragBlock ids.[0], 20.0, 20.0); Studio.DragMove(20.0, 90.0, slots); Studio.DragCancel ] two
+            Expect.isFalse (Studio.dragActive cancelled) "idle"
+            Expect.equal cancelled.Doc two.Doc "unchanged"
+            has cancelled.Notice "cancelled"
+            // behind the first block, where it already is
+            let same, fx = send [ Studio.DragPress(Studio.DragBlock ids.[0], 20.0, 20.0); Studio.DragMove(20.0, 30.0, slots); Studio.DragRelease(20.0, 30.0, slots) ] two
+            Expect.equal same.Doc two.Doc "unchanged"
+            has same.Notice "where it was"
+            Expect.equal fx [] "nothing saved"
     ]
 
 let all : Test list = [ model; color; markup; render; codec; lint; studio ]

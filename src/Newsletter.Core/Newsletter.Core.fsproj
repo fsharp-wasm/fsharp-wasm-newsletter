@@ -11,6 +11,9 @@
   <ItemGroup>
     <ProjectReference Include="../../lib/fsharp-wasm-core/FSharp.Wasm.Data/FSharp.Wasm.Data.fsproj" />
     <ProjectReference Include="../../lib/fsharp-wasm-core/FSharp.Wasm.Ui/FSharp.Wasm.Ui.fsproj" />
+    <!-- the operations on a document and the history (fsharp-wasm-core), and where a drag lands (fsharp-wasm-graphics; geometry only) -->
+    <ProjectReference Include="../../lib/fsharp-wasm-core/FSharp.Wasm.Edit/FSharp.Wasm.Edit.fsproj" />
+    <ProjectReference Include="../../lib/graphics/src/FSharp.Graphics.Interact/FSharp.Graphics.Interact.fsproj" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Model.fs" />
@@ -21,6 +24,7 @@
     <Compile Include="Codec.fs" />
     <Compile Include="Lint.fs" />
     <Compile Include="Sample.fs" />
+    <Compile Include="Dnd.fs" />
     <Compile Include="Studio.fs" />
   </ItemGroup>
 </Project>
