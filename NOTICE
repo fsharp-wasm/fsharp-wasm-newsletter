@@ -9,3 +9,7 @@ Copyright 2011-2024 The Bootstrap Authors and licensed under the MIT License (se
 The email stylesheet and markup come from FSharp.Wasm.Ui (fsharp-wasm-core), whose Ink module is a port to F# of the grid, the
 components and the stylesheet of Foundation for Emails (https://github.com/foundation/foundation-emails), Copyright (c) 2017 Foundation, inc.,
 MIT License (see licenses/foundation-for-emails-LICENSE.md).
+
+The icons of the interface (the drawings of the buttons, the palette and the structure) are the shapes of Lucide (https://lucide.dev, version 1.77.0), which FSharp.Wasm.Icons
+(fsharp-wasm-core) carries and the designer module contains: Copyright (c) 2026 Lucide Icons and Contributors, ISC License; those that Lucide took over from Feather are
+Copyright (c) 2013-present Cole Bemis, MIT License (see licenses/lucide-LICENSE.txt).

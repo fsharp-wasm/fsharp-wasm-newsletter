@@ -59,13 +59,38 @@ check('the preview frame is sandboxed from the page', (await page.locator('ifram
 check('the sample passes the checks (no errors)', /Checks: 0 errors/.test(await page.locator('details > summary', { hasText: 'Checks' }).innerText()));
 mkdirSync(shots, { recursive: true });
 
+// ── icons: SVG elements of the view, decorative, kept by a render ──
+const icons = await page.evaluate(() => {
+  const all = [...document.querySelectorAll('#app svg.icon')];
+  const SVG = 'http://www.w3.org/2000/svg';
+  return {
+    count: all.length,
+    namespace: all.every((e) => e.namespaceURI === SVG && [...e.children].every((c) => c.namespaceURI === SVG)),
+    decorative: all.every((e) => e.getAttribute('aria-hidden') === 'true' && e.getAttribute('focusable') === 'false'),
+    sized: all.every((e) => { const r = e.getBoundingClientRect(); return r.width >= 10 && r.height >= 10; }),
+    stroked: all.every((e) => getComputedStyle(e).stroke !== 'none'),
+    inPalette: document.querySelectorAll('button[data-add] svg.icon').length,
+    inRows: document.querySelectorAll('ol[aria-label^="Blocks"] > li svg.icon').length,
+  };
+});
+check('the interface has icons (palette, structure, toolbar)', icons.count > 60, `${icons.count}`);
+check('they are SVG elements in the SVG namespace', icons.namespace);
+check('they are decorative: aria-hidden and not focusable', icons.decorative);
+check('they have a size and are stroked in the colour of the text', icons.sized && icons.stroked);
+check('each palette button has the icon of its kind and a plus', icons.inPalette === 18, `${icons.inPalette}`);
+check('each row of the structure has a kind icon, a grip and four icon buttons', icons.inRows === 10 * 6, `${icons.inRows}`);
+check('the palette kinds are named for a screen reader, not by their icon', (await page.getByRole('button', { name: 'Add Quote' }).count()) === 1);
+await page.evaluate(() => { window.__icon = document.querySelector('button[data-add] svg.icon'); window.__path = window.__icon.firstElementChild; });
+
+
 // ── adding, selecting, editing ──
-await page.getByRole('button', { name: '+ Heading' }).click();
+await page.getByRole('button', { name: 'Add Heading' }).click();
 check('adding a block adds it to the structure', (await outline().count()) === 11);
 check('the new block is selected and its fields are shown', await page.getByLabel('Text', { exact: true }).isVisible());
 await page.getByLabel('Text', { exact: true }).fill('Hello from the test');
 check('typing shows in the preview at once', (await frame().getByText('Hello from the test').count()) === 1);
 check('the field keeps focus while the page re-renders', await page.getByLabel('Text', { exact: true }).evaluate((e) => e === document.activeElement));
+check('a render keeps the icons: the same svg element and the same path are still there', await page.evaluate(() => document.querySelector('button[data-add] svg.icon') === window.__icon && window.__icon.firstElementChild === window.__path && window.__icon.isConnected));
 check('the change is announced to screen readers', (await page.locator('[role=status][aria-live=polite]').innerText()) !== '');
 
 // a text area keeps what is typed, and gives it back on undo (the morph must not overwrite it)
@@ -125,7 +150,7 @@ check('Escape cancels the drag: nothing moved, no mark', await poll(async () => 
 await page.mouse.up();
 check('releasing after Escape drops nothing', (await kinds()).join() === order0.join());
 // ── dragging a new block from the palette into the list ──
-const quoteButton = page.getByRole('button', { name: '+ Quote' });
+const quoteButton = page.getByRole('button', { name: 'Add Quote' });
 const countNow = (await kinds()).length;
 const quoteBox = await quoteButton.boundingBox();
 const second = await outline().nth(1).boundingBox();
@@ -155,7 +180,7 @@ check('Escape cancels a new block: nothing added, no mark', (await kinds()).leng
 await page.setViewportSize(viewport ?? { width: 1280, height: 720 });
 
 // ── the keyboard: everything has a name and can be reached by Tab; activate with Enter and Space ──
-await page.locator('#app').getByRole('button', { name: '+ Divider' }).focus();
+await page.locator('#app').getByRole('button', { name: 'Add Divider' }).focus();
 await page.keyboard.press('Enter');
 check('Enter on a palette button adds a block', (await outline().count()) === before + 1);
 await page.keyboard.press('Space');

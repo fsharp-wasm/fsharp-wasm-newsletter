@@ -7,3 +7,5 @@ h3 { font-size: 1.05rem; margin-bottom: .75rem; }
 summary { cursor: pointer; }
 /* A Bootstrap button without a variant has no focus ring (its variants do); the flat ones of the outline show where the keyboard is. */
 .btn-flat:focus-visible { outline: 2px solid var(--bs-primary); outline-offset: 1px; }
+/* an icon is an svg in the colour of the text, as large as its width and height say: it must not shrink in a row of buttons */
+.icon { flex: none; }

@@ -9,18 +9,26 @@ open Newsletter.Model
 open Newsletter.Profile
 open Newsletter.Studio
 
+module Lucide = FSharp.Wasm.Icons.Lucide
+
 // ── small pieces ──
 let private attrIf (cond: bool) (k: string) (v: string) : HtmlItem = if cond then attr k v else attr "" ""
 
-/// A toggle in a button group: pressed = this one is on.
-let private toggle (text: string) (on: bool) (act: unit -> unit) : Node =
+/// A toggle in a button group, with an icon in front of its name when it has one: pressed = this one is on.
+let private toggleWith (icon: FSharp.Wasm.Icons.Icon option) (text: string) (on: bool) (act: unit -> unit) : Node =
     button {
         type' "button"
-        class' (if on then "btn btn-primary" else "btn btn-outline-dark")
+        class' ((if on then "btn btn-primary" else "btn btn-outline-dark") + " d-inline-flex align-items-center justify-content-center gap-1")
         attr "aria-pressed" (if on then "true" else "false")
         onClick act
+        match icon with
+        | Some i -> Icon.node 16 i
+        | None -> Empty
         text
     }
+
+let private toggle (text: string) (on: bool) (act: unit -> unit) : Node = toggleWith None text on act
+let private iconToggle (icon: FSharp.Wasm.Icons.Icon) (text: string) (on: bool) (act: unit -> unit) : Node = toggleWith (Some icon) text on act
 
 let private group (name: string) (items: Node list) : Node =
     div {
@@ -30,15 +38,16 @@ let private group (name: string) (items: Node list) : Node =
         for it in items do it
     }
 
-let private iconButton (name: string) (text: string) (enabled: bool) (act: unit -> unit) : Node =
+/// A button that is only an icon: its name is the label.
+let private iconButton (name: string) (icon: FSharp.Wasm.Icons.Icon) (enabled: bool) (act: unit -> unit) : Node =
     button {
         type' "button"
-        class' "btn btn-sm btn-outline-dark"
+        class' "btn btn-sm btn-outline-dark d-inline-flex align-items-center"
         ariaLabel name
         attr "title" name
         disabled (not enabled)
         onClick act
-        text
+        Icon.node 16 icon
     }
 
 let private fieldId (prefix: string) (key: string) : string = prefix + "-" + key
@@ -129,13 +138,16 @@ let private palette (m: Model) (dispatch: Msg -> unit) : Node =
         for (kind, _, name) in kinds do
             button {
                 type' "button"
-                class' "btn btn-sm btn-outline-primary text-start"
+                class' "btn btn-sm btn-outline-primary text-start d-flex align-items-center gap-2"
                 attr "style" "touch-action:none;user-select:none"
                 attr "data-add" (kindKey kind)
+                ariaLabel ("Add " + name)
                 attr "title" ("Add " + name + ": click, or drag it into the structure")
                 onClick (fun () -> dispatch (Add kind))
                 for item in dragItems m dispatch (DragNew kind) do item
-                "+ " + name
+                Icon.node 16 (Icon.ofKind kind)
+                span { class' "flex-grow-1"; name }
+                Icon.node 14 Lucide.plus
             }
     }
 
@@ -143,12 +155,12 @@ let private palette (m: Model) (dispatch: Msg -> unit) : Node =
 let private dragHandle (m: Model) (dispatch: Msg -> unit) (name: string) (id: int) : Node =
     button {
         type' "button"
-        class' "btn btn-sm btn-flat text-body-secondary px-1"
+        class' "btn btn-sm btn-flat text-body-secondary px-1 d-inline-flex align-items-center"
         attr "style" "touch-action:none;cursor:grab;user-select:none"       // none: the page must not pan or select text under a drag
         ariaLabel ("Drag " + name + " to another place, or use its Move buttons")
         attr "title" ("Drag " + name)
         for item in dragItems m dispatch (DragBlock id) do item
-        "⠿"
+        Icon.node 16 Lucide.gripVertical
     }
 
 let private outlineItem (m: Model) (dispatch: Msg -> unit) (index: int) (b: Block) : Node =
@@ -165,17 +177,18 @@ let private outlineItem (m: Model) (dispatch: Msg -> unit) (index: int) (b: Bloc
             dragHandle m dispatch name b.Id
             button {
                 type' "button"
-                class' "btn btn-sm btn-flat text-start flex-grow-1 text-truncate"
+                class' "btn btn-sm btn-flat text-start flex-grow-1 d-flex align-items-center gap-2 overflow-hidden"
                 data' "select" (string b.Id)
                 attrIf selected "aria-current" "true"
                 onClick (fun () -> dispatch (Select(Some b.Id)))
-                span { class' "fw-semibold"; kindLabel b.Kind }
-                span { class' "text-body-secondary ms-2"; Markup.inlineText (summary b) }
+                Icon.node 16 (Icon.ofKind b.Kind)
+                span { class' "fw-semibold text-nowrap"; kindLabel b.Kind }
+                span { class' "text-body-secondary text-truncate"; Markup.inlineText (summary b) }
             }
-            iconButton ("Move " + name + " up") "↑" (index > 0) (fun () -> dispatch (Move(b.Id, -1)))
-            iconButton ("Move " + name + " down") "↓" (index < last) (fun () -> dispatch (Move(b.Id, 1)))
-            iconButton ("Duplicate " + name) "⧉" true (fun () -> dispatch (Duplicate b.Id))
-            iconButton ("Delete " + name) "✕" true (fun () -> dispatch (Remove b.Id))
+            iconButton ("Move " + name + " up") Lucide.arrowUp (index > 0) (fun () -> dispatch (Move(b.Id, -1)))
+            iconButton ("Move " + name + " down") Lucide.arrowDown (index < last) (fun () -> dispatch (Move(b.Id, 1)))
+            iconButton ("Duplicate " + name) Lucide.copy true (fun () -> dispatch (Duplicate b.Id))
+            iconButton ("Delete " + name) Lucide.trash2 true (fun () -> dispatch (Remove b.Id))
         }
     }
 
@@ -266,7 +279,7 @@ let private documentPanel (m: Model) (dispatch: Msg -> unit) : Node =
             }
             if m.ImportError <> "" then div { id' "import-error"; class' "invalid-feedback d-block"; m.ImportError }
         }
-        button { type' "button"; class' "btn btn-sm btn-primary"; disabled (m.ImportText.Trim() = ""); onClick (fun () -> dispatch ApplyImport); "Import" }
+        button { type' "button"; class' "btn btn-sm btn-primary d-inline-flex align-items-center gap-1"; disabled (m.ImportText.Trim() = ""); onClick (fun () -> dispatch ApplyImport); Icon.node 16 Lucide.upload; "Import" }
     }
 
 // ── the theme ──
@@ -346,14 +359,14 @@ let private themePanel (m: Model) (dispatch: Msg -> unit) : Node =
         }
     }
 
-let private panelNames : (Panel * string) list = [ PBlock, "Block"; PDocument, "Newsletter"; PTheme, "Theme" ]
+let private panelNames : (Panel * string * FSharp.Wasm.Icons.Icon) list = [ PBlock, "Block", Lucide.pencil; PDocument, "Newsletter", Lucide.layoutTemplate; PTheme, "Theme", Lucide.palette ]
 
 let private right (m: Model) (dispatch: Msg -> unit) : Node =
     aside {
         ariaLabel "Settings"
         div {
             class' "mb-3"
-            group "Settings panel" [ for (panel, name) in panelNames -> toggle name (m.Panel = panel) (fun () -> dispatch (SetPanel panel)) ]
+            group "Settings panel" [ for (panel, name, icon) in panelNames -> iconToggle icon name (m.Panel = panel) (fun () -> dispatch (SetPanel panel)) ]
         }
         match m.Panel with
         | PBlock -> blockPanel m dispatch
@@ -385,8 +398,8 @@ let private codeView (m: Model) (dispatch: Msg -> unit) : Node =
         div {
             class' "d-flex flex-wrap gap-2 align-items-center mb-2"
             group "What to show" [ for (o, title, _, _) in outputNames -> toggle title (m.Output = o) (fun () -> dispatch (SetOutput o)) ]
-            button { type' "button"; class' "btn btn-sm btn-outline-primary"; onClick (fun () -> dispatch Copy); "Copy" }
-            button { type' "button"; class' "btn btn-sm btn-outline-primary"; data' "download" file; data' "source" "#export-text"; data' "type" mime; "Download" }
+            button { type' "button"; class' "btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1"; onClick (fun () -> dispatch Copy); Icon.node 16 Lucide.copy; "Copy" }
+            button { type' "button"; class' "btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1"; data' "download" file; data' "source" "#export-text"; data' "type" mime; Icon.node 16 Lucide.download; "Download" }
         }
         label { attr "for" "export-text"; class' "visually-hidden"; name }
         textarea {
@@ -402,7 +415,7 @@ let private severityBadge (f: Lint.Finding) : Node =
     let isError = (f.Severity = Lint.Error)
     let cls = if isError then "badge text-bg-danger" else "badge text-bg-warning"
     let text = if isError then "Error" else "Warning"
-    span { class' cls; text }
+    span { class' (cls + " d-inline-flex align-items-center gap-1"); Icon.node 12 (if isError then Lucide.circleAlert else Lucide.triangleAlert); text }
 
 let private checks (m: Model) (dispatch: Msg -> unit) : Node =
     let fs = findings m
@@ -434,11 +447,11 @@ let private centre (m: Model) (dispatch: Msg -> unit) : Node =
         id' "main"
         div {
             class' "d-flex flex-wrap gap-2 align-items-center mb-2"
-            group "Surface" [ toggle "Preview" (m.Surface = Preview) (fun () -> dispatch (SetSurface Preview)); toggle "Code" (m.Surface = Code) (fun () -> dispatch (SetSurface Code)) ]
+            group "Surface" [ iconToggle Lucide.eye "Preview" (m.Surface = Preview) (fun () -> dispatch (SetSurface Preview)); iconToggle Lucide.code "Code" (m.Surface = Code) (fun () -> dispatch (SetSurface Code)) ]
             if m.Surface = Preview then
-                group "Version" [ toggle "Email" (m.Medium = Email) (fun () -> dispatch (SetMedium Email)); toggle "Web" (m.Medium = Web) (fun () -> dispatch (SetMedium Web)) ]
+                group "Version" [ iconToggle Lucide.mail "Email" (m.Medium = Email) (fun () -> dispatch (SetMedium Email)); iconToggle Lucide.globe "Web" (m.Medium = Web) (fun () -> dispatch (SetMedium Web)) ]
             if m.Surface = Preview then
-                group "Width" [ toggle "Desktop" (not m.Mobile) (fun () -> dispatch (SetMobile false)); toggle "Phone" m.Mobile (fun () -> dispatch (SetMobile true)) ]
+                group "Width" [ iconToggle Lucide.monitor "Desktop" (not m.Mobile) (fun () -> dispatch (SetMobile false)); iconToggle Lucide.smartphone "Phone" m.Mobile (fun () -> dispatch (SetMobile true)) ]
         }
         match m.Surface with
         | Preview -> previewFrame m
@@ -450,12 +463,12 @@ let private centre (m: Model) (dispatch: Msg -> unit) : Node =
 let private topBar (m: Model) (dispatch: Msg -> unit) : Node =
     header {
         class' "navbar bg-body-tertiary border-bottom px-3 gap-2"
-        span { class' "navbar-brand mb-0 h1 fs-5"; "Newsletter Designer" }
+        span { class' "navbar-brand mb-0 h1 fs-5 d-inline-flex align-items-center gap-2"; Icon.node 22 Lucide.mail; "Newsletter Designer" }
         span { class' "text-body-secondary small me-auto"; m.Doc.Name }
         div {
             class' "d-flex gap-2"
-            button { type' "button"; class' "btn btn-sm btn-outline-dark"; disabled (not (canUndo m)); onClick (fun () -> dispatch Undo); "Undo" }
-            button { type' "button"; class' "btn btn-sm btn-outline-dark"; disabled (not (canRedo m)); onClick (fun () -> dispatch Redo); "Redo" }
+            button { type' "button"; class' "btn btn-sm btn-outline-dark d-inline-flex align-items-center gap-1"; disabled (not (canUndo m)); onClick (fun () -> dispatch Undo); Icon.node 16 Lucide.undo2; "Undo" }
+            button { type' "button"; class' "btn btn-sm btn-outline-dark d-inline-flex align-items-center gap-1"; disabled (not (canRedo m)); onClick (fun () -> dispatch Redo); Icon.node 16 Lucide.redo2; "Redo" }
         }
     }
 

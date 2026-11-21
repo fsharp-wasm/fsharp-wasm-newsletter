@@ -10,11 +10,13 @@
     <NoWarn>$(NoWarn);NU1900;NETSDK1188</NoWarn>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Icon.fs" />
     <Compile Include="View.fs" />
     <Compile Include="NewsletterDesigner.fs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Newsletter.Core/Newsletter.Core.fsproj" />
+    <ProjectReference Include="../../lib/fsharp-wasm-core/FSharp.Wasm.Icons/FSharp.Wasm.Icons.fsproj" />
     <ProjectReference Include="../../lib/runtime/src/FSharpWasmRuntime.fsproj" />
   </ItemGroup>
 </Project>
