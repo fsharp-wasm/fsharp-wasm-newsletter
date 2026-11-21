@@ -45,8 +45,9 @@ that are still open, and this repository's CI builds with the compiler revision 
 
 ## Not in the MVP
 
-* Drag and drop moves the blocks of the structure list (the handle at the left of a block, Escape cancels, one undo step). Still missing: dragging a new block from
-  the palette into the list, and editing text in place in the preview; the Move buttons stay as the keyboard way.
+* Drag and drop: the blocks of the structure list move by their handle, and a new block is dragged from the palette to where it should go (Escape cancels, one undo step
+  each; a click on a palette button still adds one, and the click that follows a drag is swallowed). Still missing: editing text in place in the preview. The Move buttons and the
+  palette buttons stay as the keyboard way.
 * No image upload or asset library: images are addresses (hosted by you); an email client cannot take a local file anyway.
 * No per-block colours or padding: the profile's tokens apply to the whole issue. Overriding them per block is the next feature.
 * No sending, no list management, no ESP integration: the export is the product. Merge tags (`{{unsubscribe_url}}`) pass through.

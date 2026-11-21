@@ -124,6 +124,34 @@ await page.keyboard.press('Escape');
 check('Escape cancels the drag: nothing moved, no mark', await poll(async () => (await dnd('mark').count()) === 0 && (await dnd('ghost').count()) === 0) && (await kinds()).join() === order0.join());
 await page.mouse.up();
 check('releasing after Escape drops nothing', (await kinds()).join() === order0.join());
+// ── dragging a new block from the palette into the list ──
+const quoteButton = page.getByRole('button', { name: '+ Quote' });
+const countNow = (await kinds()).length;
+const quoteBox = await quoteButton.boundingBox();
+const second = await outline().nth(1).boundingBox();
+await page.mouse.move(quoteBox.x + quoteBox.width / 2, quoteBox.y + quoteBox.height / 2);
+await page.mouse.down();
+await page.mouse.move(second.x + 60, second.y + 6, { steps: 8 });                       // the upper half of the second block
+check('the ghost names the kind that is dragged', await poll(async () => /New quote/.test(await dnd('ghost').innerText())));
+check('a mark shows where the new block would go', await poll(async () => (await dnd('mark').count()) === 1));
+await page.mouse.up();
+check('dropping adds the block there', await poll(async () => (await kinds()).length === countNow + 1 && (await kinds())[1].startsWith('Quote')), (await kinds()).join(','));
+await page.waitForTimeout(300);                                                            // a click after the drop would add a second one
+check('the drop adds exactly one block (the click after a drag is swallowed)', (await kinds()).length === countNow + 1);
+check('the new block is selected', (await outline().nth(1).locator('button[data-select]').getAttribute('aria-current')) === 'true');
+check('the drop of a new block is announced', await poll(async () => /added as .* by dragging/.test(await page.locator('footer').innerText())));
+await page.getByRole('button', { name: 'Undo', exact: true }).click();
+check('undo takes the dropped block out again', (await kinds()).length === countNow);
+await quoteButton.click();
+check('a click on the palette button still adds a block (and only one)', await poll(async () => (await kinds()).length === countNow + 1));
+await page.getByRole('button', { name: 'Undo', exact: true }).click();
+await page.mouse.move(quoteBox.x + quoteBox.width / 2, quoteBox.y + quoteBox.height / 2);
+await page.mouse.down();
+await page.mouse.move(second.x + 60, second.y + 6, { steps: 8 });
+await page.keyboard.press('Escape');
+await page.mouse.up();
+await page.waitForTimeout(300);
+check('Escape cancels a new block: nothing added, no mark', (await kinds()).length === countNow && (await dnd('mark').count()) === 0 && (await dnd('ghost').count()) === 0);
 await page.setViewportSize(viewport ?? { width: 1280, height: 720 });
 
 // ── the keyboard: everything has a name and can be reached by Tab; activate with Enter and Space ──

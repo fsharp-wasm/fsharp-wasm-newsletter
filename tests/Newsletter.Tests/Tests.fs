@@ -418,6 +418,58 @@ let studio =
             Expect.equal same.Doc two.Doc "unchanged"
             has same.Notice "where it was"
             Expect.equal fx [] "nothing saved"
+        // ── dragging a new block from the palette ──
+        testCase "dragging a block kind from the palette puts a new block where it is dropped, selected, in one step of the log" <| fun () ->
+            let three, _ = send [ Studio.Add Heading; Studio.Add Paragraph; Studio.Add Divider; Studio.Select None ] start
+            let ids = three.Doc.Blocks |> List.map (fun b -> b.Id)
+            let slots = ids |> List.mapi (fun i id -> (id, 0.0, float i * 50.0, 200.0, 40.0, false))
+            // the palette is elsewhere on the page (x = 500): the press is not over a block; the drop is on the upper half of the second
+            let added, fx =
+                send [ Studio.DragPress(Studio.DragNew Quote, 500.0, 20.0)
+                       Studio.DragMove(300.0, 60.0, slots)
+                       Studio.DragMove(20.0, 55.0, slots)
+                       Studio.DragRelease(20.0, 55.0, slots) ] three
+            let kinds = added.Doc.Blocks |> List.map (fun b -> b.Kind)
+            Expect.equal kinds [ Heading; Quote; Paragraph; Divider ] "the quote is between the first and the second"
+            Expect.equal added.Selected (Some (added.Doc.Blocks.[1].Id)) "and selected"
+            Expect.equal added.Doc.Blocks.[1].Id three.Doc.NextId "it has the number that was next"
+            Expect.equal added.Doc.NextId (three.Doc.NextId + 1) "the next number moved on"
+            has added.Notice "added as"
+            has added.Notice "by dragging"
+            Expect.isTrue (fx |> List.exists (fun e -> match e with Studio.Save _ -> true | _ -> false)) "saved"
+            Expect.equal (added.History.Past.Length - three.History.Past.Length) 1 "one step"
+            let back, _ = send [ Studio.Undo ] added
+            Expect.equal back.Doc three.Doc "undo takes it out again, and the numbering is as it was"
+        testCase "while a new block is dragged the view has the mark and a ghost with the kind's name" <| fun () ->
+            let two, _ = send [ Studio.Add Heading; Studio.Add Paragraph ] start
+            let ids = two.Doc.Blocks |> List.map (fun b -> b.Id)
+            let slots = ids |> List.mapi (fun i id -> (id, 0.0, float i * 50.0, 200.0, 40.0, false))
+            let over, _ = send [ Studio.DragPress(Studio.DragNew Divider, 500.0, 20.0); Studio.DragMove(20.0, 10.0, slots) ] two
+            Expect.isSome (Studio.dropMark over) "a mark, even over the first block: a new block always changes the document"
+            Expect.equal (Studio.dragGhost over |> Option.map (fun (label, _, _) -> label)) (Some "New divider") "the ghost says what is coming"
+            Expect.isFalse (Studio.beingDragged over ids.[0]) "no block of the list is dimmed"
+            Expect.isTrue (Studio.dragging over) "a drag, not a press"
+            let pressed, _ = send [ Studio.DragPress(Studio.DragNew Divider, 500.0, 20.0) ] two
+            Expect.isFalse (Studio.dragging pressed) "a press that has not moved is not a drag yet"
+        testCase "a new block released outside the blocks, or cancelled with Escape, adds nothing; a press that does not move is left to the click" <| fun () ->
+            let two, _ = send [ Studio.Add Heading; Studio.Add Paragraph ] start
+            let ids = two.Doc.Blocks |> List.map (fun b -> b.Id)
+            let slots = ids |> List.mapi (fun i id -> (id, 0.0, float i * 50.0, 200.0, 40.0, false))
+            let outside, _ = send [ Studio.DragPress(Studio.DragNew Spacer, 500.0, 20.0); Studio.DragMove(520.0, 400.0, []); Studio.DragRelease(520.0, 400.0, []) ] two
+            Expect.equal outside.Doc two.Doc "nothing added"
+            has outside.Notice "nothing added"
+            let cancelled, _ = send [ Studio.DragPress(Studio.DragNew Spacer, 500.0, 20.0); Studio.DragMove(20.0, 90.0, slots); Studio.DragCancel ] two
+            Expect.equal cancelled.Doc two.Doc "unchanged"
+            Expect.isFalse (Studio.dragActive cancelled) "idle"
+            has cancelled.Notice "Adding cancelled"
+            let clicked, fx = send [ Studio.DragPress(Studio.DragNew Spacer, 500.0, 20.0); Studio.DragRelease(501.0, 21.0, slots) ] two
+            Expect.equal clicked.Doc two.Doc "a click adds through the button's own click, not through the drop"
+            Expect.equal fx [] "nothing saved"
+        testCase "a new block dropped on the empty list is the first block" <| fun () ->
+            let slots = [ (Dnd.endOfList, 0.0, 0.0, 200.0, 60.0, false) ]
+            let first, _ = send [ Studio.DragPress(Studio.DragNew Footer, 500.0, 20.0); Studio.DragMove(100.0, 30.0, slots); Studio.DragRelease(100.0, 30.0, slots) ] start
+            Expect.equal (first.Doc.Blocks |> List.map (fun b -> b.Kind)) [ Footer ] "one block"
+            Expect.equal first.Selected (Some first.Doc.Blocks.[0].Id) "selected"
     ]
 
 let all : Test list = [ model; color; markup; render; codec; lint; studio ]

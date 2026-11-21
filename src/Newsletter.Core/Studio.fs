@@ -15,8 +15,10 @@ type Output = OutEmail | OutWeb | OutText | OutJson
 
 type Snapshot = { Doc: Document; Profile: Profile }
 
-/// What a drag carries: a block of the document.
-type Dragged = DragBlock of int
+/// What a drag carries: a block of the document, or a new block of a kind, from the palette.
+type Dragged =
+    | DragBlock of int
+    | DragNew of Kind
 
 /// A place a drag can drop, as the page measured it: the block's number, x, y, width, height (viewport pixels), whether it takes a drop into it.
 type Measured = int * float * float * float * float * bool
@@ -157,26 +159,38 @@ let dragActive (m: Model) : bool =
     | Idle -> false
     | _ -> true
 
+/// Has the pointer moved far enough for it to be a drag (and not a click): a view then swallows the click that the browser sends after it.
+let dragging (m: Model) : bool =
+    match m.Drag with
+    | Dragging _ -> true
+    | _ -> false
+
 /// Is this block the one being dragged (a view dims it).
 let beingDragged (m: Model) (id: int) : bool =
     match m.Drag with
     | Dragging (DragBlock dragged, _, _, _) -> dragged = id
     | _ -> false
 
+/// The blocks after dropping `what` at `drop`.  None when that changes nothing (a block onto itself, or right where it already is) or there is no such place.
+let private landing (m: Model) (what: Dragged) (drop: Drop) : Block list option =
+    let after = (drop.Position = Position.After)
+    match what with
+    | DragBlock id -> Dnd.dropBlock id drop.Target after m.Doc.Blocks
+    | DragNew kind -> Dnd.insertBlock (blank kind m.Doc.NextId) drop.Target after m.Doc.Blocks
+
 /// The line a view draws where the drag would drop (x, y, width, height in viewport pixels).  None when nothing is dragged, the pointer is over no block, or the drop would
 /// change nothing (onto the block itself, or where it already is): no mark for a place that does nothing.
 let dropMark (m: Model) : (float * float * float * float) option =
     match m.Drag with
-    | Dragging (DragBlock id, _, _, Some drop) ->
-        (match Dnd.dropBlock id drop.Target (drop.Position = Position.After) m.Doc.Blocks with
-         | Some _ -> Some (float drop.Mark.X, float drop.Mark.Y, float drop.Mark.W, float drop.Mark.H)
-         | None -> None)
+    | Dragging (what, _, _, Some drop) ->
+        landing m what drop |> Option.map (fun _ -> float drop.Mark.X, float drop.Mark.Y, float drop.Mark.W, float drop.Mark.H)
     | _ -> None
 
-/// What a view shows under the pointer while a block is dragged: its name and where the pointer is.
+/// What a view shows under the pointer while something is dragged: its name and where the pointer is.
 let dragGhost (m: Model) : (string * float * float) option =
     match m.Drag with
     | Dragging (DragBlock id, _, pointer, _) -> Some (describe m id, float pointer.X, float pointer.Y)
+    | Dragging (DragNew kind, _, pointer, _) -> Some ("New " + (kindLabel kind).ToLower(), float pointer.X, float pointer.Y)
     | _ -> None
 
 let private step (msg: Msg) (m: Model) : Model * Effect list =
@@ -207,15 +221,26 @@ let private step (msg: Msg) (m: Model) : Model * Effect list =
     | DragRelease(x, y, slots) ->
         let landed = Drag.move (slotsOf slots) (at x y) m.Drag
         let m1 = { m with Drag = Idle }
-        (match Drag.release landed with
-         | Some (DragBlock id, drop) ->
-            (match Dnd.dropBlock id drop.Target (drop.Position = Position.After) m.Doc.Blocks with
-             | Some blocks ->
+        (match Drag.release landed, landed with
+         | Some (what, drop), _ ->
+            (match landing m what drop, what with
+             | Some blocks, DragBlock id ->
                 let m2 = commit "" "" { m.Doc with Blocks = blocks } m.Profile m1
                 { m2 with Notice = describe m2 id + ": moved by dragging." }, []
-             | None -> { m1 with Notice = "Dropped where it was." }, [])
-         | None -> m1, [])
-    | DragCancel -> { m with Drag = Idle; Notice = (if dragActive m then "Move cancelled." else m.Notice) }, []
+             | Some blocks, DragNew kind ->
+                let id = m.Doc.NextId
+                let m2 = commit "" "" { m.Doc with Blocks = blocks; NextId = id + 1 } m.Profile m1
+                { m2 with Selected = Some id; Panel = PBlock; Notice = kindLabel kind + " added as " + describe m2 id + " by dragging." }, []
+             | None, _ -> { m1 with Notice = "Dropped where it was." }, [])
+         | None, Dragging (DragNew _, _, _, _) -> { m1 with Notice = "Dropped outside the blocks: nothing added." }, []
+         | None, _ -> m1, [])
+    | DragCancel ->
+        let said =
+            match m.Drag with
+            | Dragging (DragNew _, _, _, _) -> "Adding cancelled."
+            | Dragging _ -> "Move cancelled."
+            | _ -> m.Notice
+        { m with Drag = Idle; Notice = said }, []
     | EditField(id, f, v) ->
         commit ("f:" + string id + ":" + fieldKey f) "" (updateBlock id (setField f v) m.Doc) m.Profile m, []
     | EditDoc(f, v) -> commit ("d:" + docFieldKey f) "" (setDocField f v m.Doc) m.Profile m, []

@@ -14,7 +14,7 @@ project as JSON. Everything runs in the browser; there is no server and nothing 
 | **Three outputs** | the **email** (the grid and components of [Foundation for Emails](https://github.com/foundation/foundation-emails), MIT, written as typed F#: nested `role="presentation"` tables, the 12-column grid that stacks below its breakpoint, every style inlined, a hidden preheader), the **web version** (semantic HTML with the framework's own class names), the **plain-text** alternative. |
 | **A configurable profile** | **Bootstrap 5.3** by default (its palette and type, and its class names for the web version), **Tailwind CSS 3** as the second profile, **Custom** for your own. A profile is design tokens + a class map + a stylesheet/script address; every part is editable, and a profile is a JSON file you can export and import. |
 | **Checks** | subject, preheader and language; alternative text for every image; button and text contrast (WCAG 1.4.3, computed from your tokens); heading order; vague link labels; a footer with an unsubscribe link and an address; Gmail's 102 KB clipping limit. Each finding names its block and jumps to it. |
-| **Editing** | click a block in the preview or the structure; drag it by its handle to another place (a line shows where it drops; Escape cancels) or move it with the buttons; duplicate, delete; undo and redo (typing into one field is one step); phone width; the project is kept in the browser and survives a reload. |
+| **Editing** | click a block in the preview or the structure; drag it by its handle to another place, or a new block from the palette into the list (a line shows where it drops; Escape cancels), or move it with the buttons; duplicate, delete; undo and redo (typing into one field is one step); phone width; the project is kept in the browser and survives a reload. |
 | **Keyboard and screen reader** | everything is reachable and named; changes are announced in a live region; axe-core (WCAG 2.0/2.1/2.2 A and AA) finds no violation on the block, newsletter and theme panels (`tests/e2e/designer.mjs`; automated checks find a minority of problems: a screen reader pass is still to do). |
 
 ### Which framework, and what "configurable" means
@@ -38,7 +38,7 @@ compile your own CSS and put its address in the stylesheet field.
 git submodule update --init                    # lib/runtime (HTML/Elmish library + JS glue), lib/fsharp-wasm-core, lib/graphics, lib/wasmecto
 source build/env.sh                            # FSHARP_WASM_CORE_DIR
 
-# the 57 checks of the newsletter library (and the 29 of the libraries it uses, which run in fsharp-wasm-core), under .NET
+# the 61 checks of the newsletter library (and the 29 of the libraries it uses, which run in fsharp-wasm-core), under .NET
 bash build/test.sh dotnet
 
 # as WebAssembly GC: a compiler and wasm-tools

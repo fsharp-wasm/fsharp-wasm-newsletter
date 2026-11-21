@@ -31,9 +31,11 @@
 
 ## Unreleased — dragging blocks
 
+* A new block is dragged from the palette into the list (the ghost says `New quote`, a line shows where it goes); an empty list takes it as the first block. A click on a palette
+  button still adds one, and the click that the browser sends after a drag, also after Escape, is swallowed. `Ops.insertAt` of `FSharp.Wasm.Edit` turns the place into the insert.
 * A block of the structure list is dragged by its handle: a press captures the pointer, a line shows where it would drop, a ghost with its name follows the
   pointer, Escape cancels, and the move is one undo step. Where it drops is decided by `FSharp.Graphics.Interact` (`fsharp-wasm-graphics`: the slot under the
   pointer, before / after / into by where in the slot it is); the edit itself is `Ops.drop` of `FSharp.Wasm.Edit` (`fsharp-wasm-core`).
 * The history of the designer is `FSharp.Wasm.Edit.History` (with the coalescing of typing into one step) instead of its own past and future lists.
 * The focus ring of the flat buttons (a Bootstrap button without a variant has none).
-* 57 checks under .NET and as WebAssembly GC (from 53); the designer driven in Chromium drags a block with a real pointer, cancels with Escape and undoes.
+* 61 checks under .NET and as WebAssembly GC (from 53); the designer driven in Chromium drags a block and a new block with a real pointer, cancels with Escape and undoes.

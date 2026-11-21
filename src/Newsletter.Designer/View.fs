@@ -107,21 +107,39 @@ let private fieldRow (prefix: string) (spec: FieldSpec) (value: string) (onEdit:
     }
 
 // ── left: the blocks ──
-let private palette (dispatch: Msg -> unit) : Node =
+/// What starts a drag, for anything that can be dragged: a press captures the pointer (the page does it), every move reports where the places of the page are now, the release
+/// drops, Escape or a cancelled pointer ends it.  The browser sends a click to the pressed element after a drag, and a drag is not a click: it is swallowed.
+let private dragItems (m: Model) (dispatch: Msg -> unit) (what: Dragged) : HtmlItem list =
+    [ onPointerDown (fun x y -> dispatch (DragPress(what, x, y)))
+      onPointerMove (fun x y -> if dragActive m then dispatch (DragMove(x, y, Browser.Events.measureSlots ())))
+      onPointerUp (fun x y ->
+          if dragActive m then
+              if dragging m then Browser.Events.swallowClick ()
+              dispatch (DragRelease(x, y, Browser.Events.measureSlots ())))
+      onPointerCancel (fun () -> dispatch DragCancel)
+      onKeyDown (fun key ->
+          if key = "Escape" then
+              if dragging m then Browser.Events.swallowClick ()           // the pointer is still down: its release will click the pressed element
+              dispatch DragCancel) ]
+
+/// A palette button adds its block on a click, and a drag puts it where it is dropped.
+let private palette (m: Model) (dispatch: Msg -> unit) : Node =
     div {
         class' "d-grid gap-1"
         for (kind, _, name) in kinds do
             button {
                 type' "button"
                 class' "btn btn-sm btn-outline-primary text-start"
+                attr "style" "touch-action:none;user-select:none"
                 attr "data-add" (kindKey kind)
+                attr "title" ("Add " + name + ": click, or drag it into the structure")
                 onClick (fun () -> dispatch (Add kind))
+                for item in dragItems m dispatch (DragNew kind) do item
                 "+ " + name
             }
     }
 
-/// The handle that drags a block: a press on it follows the pointer (the page captures it), the page reports the places of all blocks with every move, and Escape
-/// cancels.  A pointer is not everybody's way: the Move buttons beside it do the same with the keyboard.
+/// The handle that drags a block.  A pointer is not everybody's way: the Move buttons beside it do the same with the keyboard.
 let private dragHandle (m: Model) (dispatch: Msg -> unit) (name: string) (id: int) : Node =
     button {
         type' "button"
@@ -129,11 +147,7 @@ let private dragHandle (m: Model) (dispatch: Msg -> unit) (name: string) (id: in
         attr "style" "touch-action:none;cursor:grab;user-select:none"       // none: the page must not pan or select text under a drag
         ariaLabel ("Drag " + name + " to another place, or use its Move buttons")
         attr "title" ("Drag " + name)
-        onPointerDown (fun x y -> dispatch (DragPress(DragBlock id, x, y)))
-        onPointerMove (fun x y -> if dragActive m then dispatch (DragMove(x, y, Browser.Events.measureSlots ())))
-        onPointerUp (fun x y -> if dragActive m then dispatch (DragRelease(x, y, Browser.Events.measureSlots ())))
-        onPointerCancel (fun () -> dispatch DragCancel)
-        onKeyDown (fun key -> if key = "Escape" then dispatch DragCancel)
+        for item in dragItems m dispatch (DragBlock id) do item
         "⠿"
     }
 
@@ -167,7 +181,11 @@ let private outlineItem (m: Model) (dispatch: Msg -> unit) (index: int) (b: Bloc
 
 let private outline (m: Model) (dispatch: Msg -> unit) : Node =
     if m.Doc.Blocks.IsEmpty then
-        p "No blocks yet: add one above."
+        div {
+            data' "slot" (string Dnd.endOfList)                          // a new block dropped here is the first
+            class' "text-body-secondary small border rounded p-3"
+            "No blocks yet: add one above, or drag it here."
+        }
     else
         ol {
             class' "list-group list-group-flush gap-1 p-0 m-0"
@@ -182,7 +200,7 @@ let private left (m: Model) (dispatch: Msg -> unit) : Node =
         ariaLabel "Blocks"
         section {
             h2 "Add a block"
-            palette dispatch
+            palette m dispatch
         }
         section {
             h2 "Structure"
