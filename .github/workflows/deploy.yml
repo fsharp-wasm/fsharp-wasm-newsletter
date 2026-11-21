@@ -65,6 +65,8 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || { echo "::error::the secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are not set on the environment 'cloudflare' (docs/deploy.md)"; exit 1; }
+          # without pipefail the exit code of wrangler is the one of `tee`: a deploy that failed (a Worker that could not be made live) showed as a green step
+          set -o pipefail
           npx --yes "$WRANGLER" deploy 2>&1 | tee deploy.log
           url=$(grep -oE 'https://[A-Za-z0-9._-]+\.workers\.dev' deploy.log | head -1 || true)
           echo "url=${url}" >> "$GITHUB_OUTPUT"
