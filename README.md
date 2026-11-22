@@ -1,5 +1,9 @@
 # fsharp-wasm-newsletter
 
+<!-- platform -->
+> **Part of the [fsharp-wasm platform](https://fsharp-wasm.github.io/projects/)**: editors and applications. Builds on [core](https://github.com/fsharp-wasm/fsharp-wasm-core), [runtime](https://github.com/fsharp-wasm/fsharp-wasm-runtime). Used by nobody; it is a gate of the compiler.
+> [All projects](https://fsharp-wasm.github.io/projects/) · [Roadmap](https://fsharp-wasm.github.io/docs/roadmap/) · [Tests](https://fsharp-wasm.github.io/tests/) · [Benchmarks](https://fsharp-wasm.github.io/benchmarks/) · [Live demos](https://fsharp-wasm.github.io/demos/)
+
 A newsletter designer, written in F# and compiled to WebAssembly GC by [fsharp-wasm](https://github.com/fsharp-wasm/fsharp-wasm).
 Build an issue from blocks, see it as the HTML email and as the web version, check it, and export it — HTML, plain text, or the
 project as JSON. Everything runs in the browser; there is no server and nothing is uploaded.
