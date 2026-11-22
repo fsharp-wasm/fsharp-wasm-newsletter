@@ -265,6 +265,65 @@ await page.getByLabel('Project or profile (JSON)').fill(json.replace('Small soft
 await page.getByRole('button', { name: 'Import', exact: true }).click();
 check('a valid project is imported', (await page.getByLabel('Subject line').inputValue()) === 'Imported subject');
 
+// ── projects: a library of newsletters in the browser ──
+const projectsButton = () => page.getByRole('button', { name: /^Projects \(/ });
+const rows = () => page.locator('#projects li[data-project]');
+const rowNames = async () => (await rows().locator('.fw-semibold').allInnerTexts()).map((t) => t.replace(' (open)', ''));
+const openProjects = async () => { if ((await page.locator('#projects').count()) === 0) await projectsButton().click(); };
+await page.getByRole('button', { name: 'Newsletter', exact: true }).click();
+const firstSubject = await page.getByLabel('Subject line').inputValue();
+await openProjects();
+check('the projects button says how many there are', (await projectsButton().innerText()).includes('(1)'));
+check('the library lists the project that was always there, open', (await rows().count()) === 1 && (await rows().first().getAttribute('data-project')) === 'p1' && (await rows().first().locator('[aria-current="true"]').count()) === 1);
+check('a project shows its subject, its size and when it was saved', (await rows().first().innerText()).includes(firstSubject) && /\d+ blocks? · saved \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC/.test(await rows().first().innerText()));
+await page.getByRole('button', { name: 'New newsletter', exact: true }).click();
+check('a new newsletter is made and opened, and the list closes', await poll(async () => (await page.locator('#projects').count()) === 0 && (await page.getByLabel('Subject line').inputValue()) === ''));
+check('it has no blocks', (await outline().count()) === 0);
+check('it keeps the theme of the one before', (await exported('Web HTML')).includes('tailwindcss') || (await exported('Web HTML')).includes('bootstrap'));
+await page.getByLabel('Name (only for you)').fill('Launch plan');
+await page.getByLabel('Subject line').fill('We launch on Friday');
+await openProjects();
+check('the list follows what is typed: name and subject', await poll(async () => { const names = await rowNames(); return names.length === 2 && names[0] === 'Launch plan'; }), (await rowNames()).join(' | '));
+check('the newest is first', (await rows().first().getAttribute('data-project')) === 'p2');
+await page.getByLabel('Search', { exact: true }).fill('friday');
+check('the search finds a project by its subject', await poll(async () => (await rows().count()) === 1 && (await rowNames())[0] === 'Launch plan'));
+await page.getByLabel('Search', { exact: true }).fill('no such thing');
+check('and says so when nothing matches', await poll(async () => (await rows().count()) === 0 && (await page.locator('#projects').innerText()).includes('No newsletter matches')));
+await page.getByLabel('Search', { exact: true }).fill('');
+await page.reload();
+await page.waitForSelector('header .navbar-brand');
+check('after a reload the library is there and the last project is open', await poll(async () => (await projectsButton().innerText()).includes('(2)')) && (await page.getByRole('button', { name: 'Newsletter', exact: true }).click(), await page.getByLabel('Name (only for you)').inputValue()) === 'Launch plan');
+await openProjects();
+await rows().filter({ has: page.locator('[data-project="p1"]') }).count();
+await page.locator('li[data-project="p1"] button.btn-flat').click();
+check('opening another project brings its document', await poll(async () => (await page.getByLabel('Subject line').inputValue()) === firstSubject), await page.getByLabel('Subject line').inputValue());
+check('and the list closes', (await page.locator('#projects').count()) === 0);
+await openProjects();
+await page.getByRole('button', { name: /^Duplicate / }).first().click();
+check('a project is duplicated: a copy beside it', await poll(async () => (await rows().count()) === 3 && (await rowNames()).some((n) => n.endsWith('(copy)'))), (await rowNames()).join(' | '));
+check('the one that was open stays open', (await rows().filter({ has: page.locator('[aria-current="true"]') }).getAttribute('data-project')) === 'p1');
+await page.screenshot({ path: shots + 'designer-projects.png', clip: { x: 0, y: 0, width: 1440, height: 420 } });
+const rowsBefore = await rows().count();
+await page.getByRole('button', { name: 'Delete Launch plan', exact: true }).click();
+check('deleting asks first, and Keep keeps it', (await page.getByRole('button', { name: 'Keep', exact: true }).count()) === 1);
+await page.getByRole('button', { name: 'Keep', exact: true }).click();
+check('nothing was deleted', (await rows().count()) === rowsBefore);
+await page.getByRole('button', { name: 'Delete Launch plan', exact: true }).click();
+await page.getByRole('button', { name: 'Delete', exact: true }).click();
+check('after the question the project is gone', await poll(async () => (await rows().count()) === rowsBefore - 1 && !(await rowNames()).includes('Launch plan')));
+const keys = await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('fsharp-wasm-newsletter/')).sort());
+check('the browser keeps an index and a key for each project, and nothing of the one that was deleted', keys.includes('fsharp-wasm-newsletter/projects') && keys.filter((k) => k.startsWith('fsharp-wasm-newsletter/project/')).length === rowsBefore - 1 && !keys.includes('fsharp-wasm-newsletter/project/p2'), keys.join(' '));
+check('the page of the projects has no axe violation', await (async () => { await page.evaluate(axeSource); const r = await page.evaluate(() => axe.run(document.querySelector('#projects'), { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'] } })); return r.violations.length === 0 || (console.log(JSON.stringify(r.violations.map((v) => ({ id: v.id, n: v.nodes.map((x) => x.target) })))), false); })());
+// the single project of the versions before the library: read, kept as the library's first, and its old key forgotten
+const old = await page.evaluate(() => localStorage.getItem('fsharp-wasm-newsletter/project/p1'));
+await page.evaluate((v) => { for (const k of Object.keys(localStorage)) if (k.startsWith('fsharp-wasm-newsletter/')) localStorage.removeItem(k); localStorage.setItem('fsharp-wasm-newsletter/project', v); }, old);
+await page.reload();
+await page.waitForSelector('header .navbar-brand');
+check('a project kept by an earlier version becomes the first of a library', await poll(async () => (await projectsButton().innerText()).includes('(1)')));
+check('and its old key is gone', await poll(async () => (await page.evaluate(() => localStorage.getItem('fsharp-wasm-newsletter/project'))) === null && (await page.evaluate(() => localStorage.getItem('fsharp-wasm-newsletter/project/p1'))) !== null));
+await page.getByRole('button', { name: 'Newsletter', exact: true }).click();
+check('with its document', (await page.getByLabel('Subject line').inputValue()) === firstSubject);
+
 // ── the page itself: axe-core (WCAG 2.0 / 2.1 / 2.2 A and AA), keyboard stops ──
 await page.getByRole('button', { name: 'Load sample', exact: true }).click();
 for (const [name, steps] of [['block panel', async () => { await page.getByRole('button', { name: 'Block', exact: true }).click(); await outline().nth(1).locator('button[data-select]').click(); }],

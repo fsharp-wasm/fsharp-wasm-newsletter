@@ -20,6 +20,7 @@ project as JSON. Everything runs in the browser; there is no server and nothing 
 | **Checks** | subject, preheader and language; alternative text for every image; button and text contrast (WCAG 1.4.3, computed from your tokens); heading order; vague link labels; a footer with an unsubscribe link and an address; Gmail's 102 KB clipping limit. Each finding names its block and jumps to it. |
 | **Icons** | the interface has icons: a kind icon on every palette button and row of the structure, icon buttons for move, duplicate and delete, icons in the toggles, undo and the checks. They are the 51 shapes of Lucide in `FSharp.Wasm.Icons`, drawn as SVG elements of the view (decorative: the control carries the name), in the colour of the text. |
 | **Editing** | click a block in the preview or the structure; click the selected block in the preview to edit its text in place; drag it by its handle to another place, or a new block from the palette into the list (a line shows where it drops; Escape cancels), or move it with the buttons; duplicate, delete; undo and redo (typing into one field is one step); phone width; the project is kept in the browser and survives a reload. |
+| **Projects** | a library of newsletters in the browser: new, open, duplicate, delete (it asks first), search by name or subject, import a project file as a new newsletter. Each project is kept as you type, with the time it was saved; the library opens on the one you left. The single project of earlier versions becomes the first of the library. Undo is per open project (a project that is opened starts with a fresh log). See [docs/projects.md](docs/projects.md). |
 | **Keyboard and screen reader** | everything is reachable and named; changes are announced in a live region; axe-core (WCAG 2.0/2.1/2.2 A and AA) finds no violation on the block, newsletter and theme panels (`tests/e2e/designer.mjs`; automated checks find a minority of problems: a screen reader pass is still to do). |
 
 ### Which framework, and what "configurable" means
@@ -43,7 +44,7 @@ compile your own CSS and put its address in the stylesheet field.
 git submodule update --init                    # lib/runtime (HTML/Elmish library + JS glue), lib/fsharp-wasm-core, lib/graphics, lib/wasmecto
 source build/env.sh                            # FSHARP_WASM_CORE_DIR
 
-# the 65 checks of the newsletter library (and the 29 of the libraries it uses, which run in fsharp-wasm-core), under .NET
+# the 82 checks of the newsletter library (and the 29 of the libraries it uses, which run in fsharp-wasm-core), under .NET
 bash build/test.sh dotnet
 
 # as WebAssembly GC: a compiler and wasm-tools
@@ -62,8 +63,8 @@ npm ci && node tests/e2e/designer.mjs         # the designer in Chromium (Playwr
 | path | what it is |
 |---|---|
 | `lib/fsharp-wasm-core` | submodule: the standard libraries this program is built on — `FSharp.Wasm.Data` (JSON, numbers) and `FSharp.Wasm.Ui` (typed CSS and HTML, the inliner, Foundation for Emails as F#; [documentation](https://github.com/fsharp-wasm/fsharp-wasm-core/blob/develop/docs/ui.md)) — and the base library the compiler needs. |
-| `src/Newsletter.Core` | the library, pure F#: `Model` (blocks, fields, operations), `Profile`, `Markup`, `Render` (email on `Ink`, web, text), `Codec`, `Lint`, `Color`, and `Studio` — the designer as a state machine (`update` is pure and says which effects to carry out). Runs under .NET and as WasmGC. |
-| `src/Newsletter.Designer` | the interface: `View` (Bootstrap markup on the `Browser.Html` DSL) and `NewsletterDesigner` (hosts the program, local storage, clipboard). Compiled to `dist/NewsletterDesigner.wasm`. |
+| `src/Newsletter.Core` | the library, pure F#: `Model` (blocks, fields, operations), `Profile`, `Markup`, `Render` (email on `Ink`, web, text), `Codec`, `Lint`, `Color`, and `Projects` (the library of newsletters: index, ids, names, search) and `Studio` — the designer as a state machine (`update` is pure and says which effects to carry out). Runs under .NET and as WasmGC. |
+| `src/Newsletter.Designer` | the interface: `View` (Bootstrap markup on the `Browser.Html` DSL) and `NewsletterDesigner` (hosts the program, the library in local storage, clipboard). Compiled to `dist/NewsletterDesigner.wasm`. |
 | `web/` | the page, a few lines of CSS, a local copy of Bootstrap 5.3.3 (MIT, `web/vendor/bootstrap`). The page does one thing for the module: it starts downloads (the sandboxed preview frame talks to the module through `Browser.Events.onFrameMessage`, which is F#). |
 | `tests/Newsletter.Tests` | the suites, written with [Wasmecto](https://github.com/fsharp-wasm/fsharp-wasmecto); `Newsletter.WasmTests` compiles the same file to WasmGC. |
 | `tests/e2e/designer.mjs` | the compiled designer driven in Chromium: editing, undo, keyboard, import/export, reload, axe-core. |

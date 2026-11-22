@@ -4,6 +4,7 @@ module Newsletter.Studio
 
 open Newsletter.Model
 open Newsletter.Profile
+open Newsletter.Projects
 open FSharp.Math
 open FSharp.Wasm.Data
 open FSharp.Wasm.Edit
@@ -44,7 +45,20 @@ type Model =
       /// said to screen readers (a live region) and shown in the status line
       Notice: string
       ImportText: string
-      ImportError: string }
+      ImportError: string
+      /// the projects the browser keeps, and which one is open
+      Library: Library
+      /// the list of projects is shown, what was typed into its search field, and the project that is being asked about deleting
+      ProjectsOpen: bool
+      Search: string
+      Asking: string option
+      /// the last time the host told (milliseconds since the epoch): a pure `update` has no clock
+      Clock: float }
+
+/// What is to be done with a project that the host has read.
+type Intent =
+    | OpenIt
+    | CopyIt
 
 type Msg =
     | Add of Kind
@@ -77,12 +91,32 @@ type Msg =
     | LoadSample
     | NewDocument
     | Restore of string
+    /// the host has read the browser's storage: the index, the project it names, the single project of versions before the library, and the time
+    | Boot of index: string * current: string * legacy: string * now: float
+    | ToggleProjects
+    | NewProject
+    | OpenProject of string
+    | DuplicateProject of string
+    | AskDelete of string option
+    | DeleteProject of string
+    | FilterProjects of string
+    | ImportAsProject
+    /// the host has read a project (None: it is not there or cannot be read)
+    | Loaded of id: string * Intent * json: string option
+    /// the host has kept a project, at this time
+    | Saved of id: string * now: float
     | Copy
     | Copied of bool
 
 type Effect =
-    /// the project as JSON, to keep in the browser
-    | Save of string
+    /// the project of this id as JSON, to keep in the browser (the host answers `Saved` with the time)
+    | Save of id: string * json: string
+    /// the index of the library as JSON
+    | SaveIndex of string
+    /// read the project of this id and answer `Loaded`
+    | Load of id: string * Intent
+    /// forget what the browser keeps under this key
+    | Erase of string
     | Clipboard of string
     /// something to say to the preview frame, as JSON
     | ToPreview of string
@@ -92,7 +126,8 @@ let private maxHistory = 100
 let init : Model =
     { Doc = Sample.issue; Profile = defaultProfile; Selected = None; History = History.create maxHistory; Drag = Idle
       Panel = PDocument; Surface = Preview; Medium = Email; Mobile = false; Output = OutEmail
-      Frozen = None; Scroll = 0; Notice = ""; ImportText = ""; ImportError = "" }
+      Frozen = None; Scroll = 0; Notice = ""; ImportText = ""; ImportError = ""
+      Library = Projects.empty; ProjectsOpen = false; Search = ""; Asking = None; Clock = 0.0 }
 
 let private snapshot (m: Model) : Snapshot = { Doc = m.Doc; Profile = m.Profile }
 
@@ -215,6 +250,62 @@ let private blockOf (j: Json option) : int option =
     | Some (JNum n) -> Some (int n)
     | _ -> None
 
+// ── the library of projects ──
+
+let private describeProject (m: Model) (id: string) : string =
+    match Projects.find id m.Library with
+    | Some meta -> meta.Name + " is open."
+    | None -> ""
+
+/// The projects the list shows (newest first, those that match the search).
+let visibleProjects (m: Model) : Meta list = Projects.visible m.Search m.Library
+
+/// The meta of the project that is open, as the document says it now (the library keeps what a list shows: name, subject, size).
+let private mirror (m: Model) : Model =
+    match Projects.find m.Library.Current m.Library with
+    | Some meta -> { m with Library = Projects.upsert { meta with Name = m.Doc.Name; Subject = m.Doc.Subject; Blocks = m.Doc.Blocks.Length } m.Library }
+    | None -> m
+
+let private indexOf (m: Model) : Effect = SaveIndex(Projects.libraryToJson m.Library)
+
+/// A project of its own for `doc` and `profile` (opened if `openIt`): added to the library, and kept.
+let private addProject (doc: Document) (profile: Profile) (openIt: bool) (notice: string) (m: Model) : Model * Effect list =
+    let id = Projects.nextId m.Library.Items
+    let meta = Projects.metaOf id m.Clock m.Clock doc
+    let library = { Items = meta :: m.Library.Items; Current = (if openIt then id else m.Library.Current) }
+    let m2 = { m with Library = library; Notice = notice; ProjectsOpen = (if openIt then false else m.ProjectsOpen) }
+    let kept = [ Save(id, Codec.projectToJson doc profile); indexOf m2 ]
+    if openIt then { m2 with Doc = doc; Profile = profile; Selected = None; History = History.create maxHistory; Panel = PDocument }, kept
+    else m2, kept
+
+/// The project that was read, as the model: the document and the profile, a fresh log of changes, nothing selected.
+let private open' (id: string) (doc: Document) (profile: Profile) (m: Model) : Model =
+    { m with Doc = doc; Profile = profile; Selected = None; History = History.create maxHistory; Panel = PDocument
+             Library = { m.Library with Current = id }; ProjectsOpen = false; Asking = None
+             Notice = "Opened " + doc.Name + "." }
+
+/// What the browser kept, as the model: the library and the open project, or (a first visit, or the single project of the versions before) a library of one.
+let private boot (index: string) (current: string) (legacy: string) (now: float) (m: Model) : Model * Effect list =
+    let m = { m with Clock = now }
+    match Projects.libraryOfJson index with
+    | Some library when not library.Items.IsEmpty ->
+        let wanted = (if (Projects.find library.Current library).IsSome then library.Current else (Projects.byRecent library.Items).Head.Id)
+        let m1 = { m with Library = { library with Current = wanted } }
+        (match Codec.projectOfJson current with
+         | Ok(d, p) when wanted = library.Current -> { (open' wanted d p m1) with Notice = "" }, []
+         // the project it was left on is gone: open the newest
+         | _ -> { m1 with Library = { library with Current = "" } }, [ Load(wanted, OpenIt) ])
+    | _ ->
+        // the single project of the versions before the library, or the sample of a first visit: the library of one
+        let doc, profile, migrated =
+            match Codec.projectOfJson legacy with
+            | Ok(d, p) -> d, p, true
+            | Error _ -> m.Doc, m.Profile, false
+        let id = Projects.nextId []
+        let library = { Items = [ Projects.metaOf id now now doc ]; Current = id }
+        let m2 = { m with Doc = doc; Profile = profile; Library = library; History = History.create maxHistory }
+        m2, [ Save(id, Codec.projectToJson doc profile); SaveIndex(Projects.libraryToJson library) ] @ (if migrated then [ Erase Projects.legacyKey ] else [])
+
 let rec private step (msg: Msg) (m: Model) : Model * Effect list =
     match msg with
     | Add kind ->
@@ -322,6 +413,59 @@ let rec private step (msg: Msg) (m: Model) : Model * Effect list =
         match Codec.projectOfJson json with
         | Ok(d, p) -> { m with Doc = d; Profile = p; Selected = None; History = History.create maxHistory }, []
         | Error _ -> m, []
+    | Boot(index, current, legacy, now) -> boot index current legacy now m
+    | ToggleProjects -> { m with ProjectsOpen = not m.ProjectsOpen; Asking = None; Notice = (if m.ProjectsOpen then "Projects closed." else "Projects: " + string m.Library.Items.Length + ".") }, []
+    | NewProject ->
+        let name = Projects.numbered "Untitled issue" m.Library.Items
+        addProject { emptyDocument with Name = name } m.Profile true ("New newsletter: " + name + ".") m
+    | OpenProject id ->
+        if id = m.Library.Current then { m with ProjectsOpen = false; Notice = describeProject m id }, []
+        else { m with Notice = "Opening…" }, [ Load(id, OpenIt) ]
+    | DuplicateProject id ->
+        if id = m.Library.Current then
+            addProject { m.Doc with Name = Projects.copyName m.Doc.Name m.Library.Items } m.Profile false ("Duplicated as " + Projects.copyName m.Doc.Name m.Library.Items + ".") m
+        else m, [ Load(id, CopyIt) ]
+    | AskDelete id -> { m with Asking = id }, []
+    | DeleteProject id ->
+        let name = (match Projects.find id m.Library with Some meta -> meta.Name | None -> "Project")
+        let library = Projects.remove id m.Library
+        let m1 = { m with Library = library; Asking = None; Notice = name + " deleted." }
+        if id <> m.Library.Current then m1, [ Erase(Projects.projectKey id); indexOf m1 ]
+        else
+            // the open one: nothing is open until the newest of the rest has been read (the document in memory is the deleted one's, so it must not be kept under another id)
+            match Projects.byRecent library.Items with
+            | next :: _ ->
+                let m2 = { m1 with Library = { library with Current = "" } }
+                m2, [ Erase(Projects.projectKey id); indexOf m2; Load(next.Id, OpenIt) ]
+            | [] ->
+                let doc = { emptyDocument with Name = "Untitled issue" }
+                let fresh, fx = addProject doc m.Profile true (name + " deleted. A new empty newsletter is open.") m1
+                fresh, Erase(Projects.projectKey id) :: fx
+    | FilterProjects text -> { m with Search = text }, []
+    | ImportAsProject ->
+        match Codec.projectOfJson m.ImportText with
+        | Ok(d, p) ->
+            let doc = { d with Name = Projects.numbered d.Name m.Library.Items }
+            let m2, fx = addProject doc p true ("Imported as a new newsletter: " + doc.Name + ".") { m with ImportText = ""; ImportError = "" }
+            m2, fx
+        | Error e -> { m with ImportError = e }, []
+    | Loaded(id, intent, json) ->
+        (match json |> Option.map Codec.projectOfJson with
+         | Some(Ok(d, p)) ->
+            (match intent with
+             | OpenIt ->
+                let m2 = open' id d p m
+                m2, [ indexOf m2 ]
+             | CopyIt -> addProject { d with Name = Projects.copyName d.Name m.Library.Items } p false ("Duplicated as " + Projects.copyName d.Name m.Library.Items + ".") m)
+         | _ -> { m with Notice = "That project could not be read." }, [])
+    | Saved(id, now) ->
+        let m1 = { m with Clock = now }
+        (match Projects.find id m1.Library with
+         | Some meta ->
+            let meta2 = { meta with Modified = now; Created = (if meta.Created = 0.0 then now else meta.Created) }
+            let m2 = { m1 with Library = Projects.upsert meta2 m1.Library }
+            m2, [ indexOf m2 ]
+         | None -> m1, [])
     | Copy -> { m with Notice = "Copying…" }, [ Clipboard(output m) ]
     | Copied ok -> { m with Notice = (if ok then "Copied to the clipboard." else "Copying was blocked by the browser: select the text and copy it by hand.") }, []
 
@@ -329,7 +473,12 @@ let rec private step (msg: Msg) (m: Model) : Model * Effect list =
 let update (msg: Msg) (m: Model) : Model * Effect list =
     let m2, effects = step msg m
     // a preview that holds an editor is kept as it is while the frame talks (typing, scrolling); anything else lets it follow the document again
-    let m2 = (match msg with FromPreview _ -> m2 | _ -> { m2 with Frozen = None })
+    // (`Saved` comes after every keystroke that is kept: it is not a change of what the preview shows)
+    let m2 = (match msg with FromPreview _ | Saved _ -> m2 | _ -> { m2 with Frozen = None })
     let changed = m2.Doc <> m.Doc || m2.Profile <> m.Profile
-    let isRestore = (match msg with Restore _ -> true | _ -> false)
-    m2, (if changed && not isRestore then Save(Codec.projectToJson m2.Doc m2.Profile) :: effects else effects)
+    // what was read from the browser (or a project that was just made, which `step` keeps itself) is not kept again
+    let fromStorage = (match msg with Restore _ | Boot _ | Loaded _ | NewProject | ImportAsProject | DeleteProject _ -> true | _ -> false)
+    if changed && not fromStorage then
+        let m3 = mirror m2
+        m3, Save(m3.Library.Current, Codec.projectToJson m3.Doc m3.Profile) :: effects
+    else m2, effects

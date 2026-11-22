@@ -279,6 +279,7 @@ let private documentPanel (m: Model) (dispatch: Msg -> unit) : Node =
             }
             if m.ImportError <> "" then div { id' "import-error"; class' "invalid-feedback d-block"; m.ImportError }
         }
+        button { type' "button"; class' "btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1 me-2"; disabled (m.ImportText.Trim() = ""); onClick (fun () -> dispatch ImportAsProject); Icon.node 16 Lucide.plus; "Import as a new newsletter" }
         button { type' "button"; class' "btn btn-sm btn-primary d-inline-flex align-items-center gap-1"; disabled (m.ImportText.Trim() = ""); onClick (fun () -> dispatch ApplyImport); Icon.node 16 Lucide.upload; "Import" }
     }
 
@@ -459,6 +460,78 @@ let private centre (m: Model) (dispatch: Msg -> unit) : Node =
         checks m dispatch
     }
 
+// ── projects ──
+
+/// "saved 2026-11-22 18:20 UTC", or "" when the time is not known.
+let private savedAt (meta: Projects.Meta) : string =
+    let when' = Projects.stamp meta.Modified
+    if when' = "" then "" else " · saved " + when' + " UTC"
+
+let private projectRow (m: Model) (dispatch: Msg -> unit) (p: Projects.Meta) : Node =
+    let current = (p.Id = m.Library.Current)
+    let name = (if p.Name.Trim() = "" then "(no name)" else p.Name)
+    let subject = (if p.Subject.Trim() = "" then "No subject line yet" else p.Subject)
+    let detail = string p.Blocks + (if p.Blocks = 1 then " block" else " blocks") + savedAt p
+    let title = name + (if current then " (open)" else "")
+    li {
+        class' (if current then "list-group-item d-flex align-items-center gap-2 list-group-item-primary" else "list-group-item d-flex align-items-center gap-2")
+        data' "project" p.Id
+        button {
+            type' "button"
+            class' "btn btn-flat text-start flex-grow-1 overflow-hidden"
+            attrIf current "aria-current" "true"
+            onClick (fun () -> dispatch (OpenProject p.Id))
+            span { class' "fw-semibold d-block text-truncate"; title }
+            span { class' "small d-block text-truncate"; subject }
+            span { class' "small text-body-secondary d-block"; detail }
+        }
+        if m.Asking = Some p.Id then
+            div {
+                class' "d-flex align-items-center gap-2"
+                role "group"
+                ariaLabel ("Delete " + name + "?")
+                span { class' "small"; "Delete it?" }
+                button { type' "button"; class' "btn btn-sm btn-danger"; onClick (fun () -> dispatch (DeleteProject p.Id)); "Delete" }
+                button { type' "button"; class' "btn btn-sm btn-outline-dark"; onClick (fun () -> dispatch (AskDelete None)); "Keep" }
+            }
+        else
+            div {
+                class' "d-flex gap-1"
+                iconButton ("Duplicate " + name) Lucide.copy true (fun () -> dispatch (DuplicateProject p.Id))
+                iconButton ("Delete " + name) Lucide.trash2 true (fun () -> dispatch (AskDelete(Some p.Id)))
+            }
+    }
+
+let private projectsPanel (m: Model) (dispatch: Msg -> unit) : Node =
+    let shown = visibleProjects m
+    section {
+        id' "projects"
+        class' "border-bottom bg-body-tertiary px-3 py-3"
+        ariaLabel "Projects"
+        div {
+            class' "d-flex flex-wrap align-items-end gap-2 mb-2"
+            div { role "heading"; attr "aria-level" "2"; class' "fs-6 fw-semibold mb-0 me-auto"; "Your newsletters" }
+            div {
+                label { attr "for" "project-search"; class' "form-label small fw-semibold mb-0"; "Search" }
+                input {
+                    id' "project-search"
+                    type' "search"
+                    class' "form-control form-control-sm"
+                    value' m.Search
+                    onInput (fun v -> dispatch (FilterProjects v))
+                }
+            }
+            button { type' "button"; class' "btn btn-sm btn-primary d-inline-flex align-items-center gap-1"; onClick (fun () -> dispatch NewProject); Icon.node 16 Lucide.plus; "New newsletter" }
+            button { type' "button"; class' "btn btn-sm btn-outline-dark"; onClick (fun () -> dispatch ToggleProjects); "Close" }
+        }
+        if shown.IsEmpty then div { class' "text-body-secondary small"; "No newsletter matches what you typed." }
+        else
+            ul {
+                class' "list-group"
+                for p in shown do projectRow m dispatch p
+            }
+    }
+
 // ── the page ──
 let private topBar (m: Model) (dispatch: Msg -> unit) : Node =
     header {
@@ -467,6 +540,15 @@ let private topBar (m: Model) (dispatch: Msg -> unit) : Node =
         span { class' "text-body-secondary small me-auto"; m.Doc.Name }
         div {
             class' "d-flex gap-2"
+            button {
+                type' "button"
+                class' (if m.ProjectsOpen then "btn btn-sm btn-primary d-inline-flex align-items-center gap-1" else "btn btn-sm btn-outline-dark d-inline-flex align-items-center gap-1")
+                attr "aria-expanded" (if m.ProjectsOpen then "true" else "false")
+                attr "aria-controls" "projects"
+                onClick (fun () -> dispatch ToggleProjects)
+                Icon.node 16 Lucide.layers
+                "Projects (" + string m.Library.Items.Length + ")"
+            }
             button { type' "button"; class' "btn btn-sm btn-outline-dark d-inline-flex align-items-center gap-1"; disabled (not (canUndo m)); onClick (fun () -> dispatch Undo); Icon.node 16 Lucide.undo2; "Undo" }
             button { type' "button"; class' "btn btn-sm btn-outline-dark d-inline-flex align-items-center gap-1"; disabled (not (canRedo m)); onClick (fun () -> dispatch Redo); Icon.node 16 Lucide.redo2; "Redo" }
         }
@@ -502,6 +584,7 @@ let view (m: Model) (dispatch: Msg -> unit) : Node =
     div {
         a { class' "visually-hidden-focusable"; href "#main"; "Skip to the preview" }
         topBar m dispatch
+        if m.ProjectsOpen then projectsPanel m dispatch
         div {
             class' "container-fluid py-3"
             div {

@@ -25,6 +25,7 @@
     <Compile Include="Lint.fs" />
     <Compile Include="Sample.fs" />
     <Compile Include="Dnd.fs" />
+    <Compile Include="Projects.fs" />
     <Compile Include="Studio.fs" />
   </ItemGroup>
 </Project>

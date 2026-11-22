@@ -533,6 +533,159 @@ let studio =
             hasNot (Render.web Render.exportOptions defaultProfile d) "data-edit-text"
             hasNot (Render.web Render.exportOptions defaultProfile d) "data-block"
             has (Render.web o defaultProfile d) "<div data-block=\"3\""
+        // ── the library of projects ──
+        testCase "a first visit makes a library of one, from the sample, and keeps it" <| fun () ->
+            let m, fx = send [ Studio.Boot("", "", "", 1000.0) ] Studio.init
+            Expect.equal (m.Library.Items |> List.map (fun p -> p.Id)) [ "p1" ] "one project"
+            Expect.equal m.Library.Current "p1" "and it is open"
+            Expect.equal m.Doc.Name Sample.issue.Name "the sample"
+            Expect.isTrue (fx |> List.exists (fun e -> match e with Studio.Save("p1", _) -> true | _ -> false)) "its project is kept"
+            Expect.isTrue (fx |> List.exists (fun e -> match e with Studio.SaveIndex _ -> true | _ -> false)) "and the index"
+        testCase "the single project of the versions before is migrated, and its old key forgotten" <| fun () ->
+            let legacy = Codec.projectToJson { emptyDocument with Name = "Old work"; Subject = "kept" } bootstrap
+            let m, fx = send [ Studio.Boot("", "", legacy, 5.0) ] Studio.init
+            Expect.equal m.Doc.Name "Old work" "the document came with it"
+            Expect.equal (m.Library.Items |> List.map (fun p -> p.Name)) [ "Old work" ] "it is the library's first project"
+            Expect.isTrue (fx |> List.contains (Studio.Erase Projects.legacyKey)) "the old key is erased"
+        testCase "a library that was kept opens the project it was left on, without saving it again" <| fun () ->
+            let lib : Projects.Library = { Items = [ { Id = "p1"; Name = "A"; Subject = ""; Blocks = 0; Created = 1.0; Modified = 1.0 }; { Id = "p2"; Name = "B"; Subject = "s"; Blocks = 0; Created = 2.0; Modified = 2.0 } ]; Current = "p1" }
+            let b = Codec.projectToJson { emptyDocument with Name = "A" } bootstrap
+            let m, fx = send [ Studio.Boot(Projects.libraryToJson lib, b, "", 9.0) ] Studio.init
+            Expect.equal m.Library.Current "p1" "the one it was left on"
+            Expect.equal m.Doc.Name "A" "its document"
+            Expect.equal fx [] "nothing is written"
+            let gone, fx2 = send [ Studio.Boot(Projects.libraryToJson { lib with Current = "p9" }, "", "", 9.0) ] Studio.init
+            Expect.equal gone.Library.Current "" "nothing is open until the newest has been read"
+            Expect.equal fx2 [ Studio.Load("p2", Studio.OpenIt) ] "the project it was left on is not in the library any more: the newest is opened"
+        testCase "a change is kept under the id of the open project, and `Saved` stamps it" <| fun () ->
+            let m0, _ = send [ Studio.Boot("", "", "", 100.0) ] { Studio.init with Doc = emptyDocument }
+            let m1, fx = send [ Studio.EditDoc(DName, "Renamed"); Studio.EditDoc(DSubject, "Hello") ] m0
+            Expect.isTrue (fx |> List.exists (fun e -> match e with Studio.Save(id, _) -> id = m0.Library.Current | _ -> false)) "kept under its id"
+            Expect.equal (m1.Library.Items |> List.map (fun p -> p.Name, p.Subject)) [ "Renamed", "Hello" ] "the list shows the new name and subject at once"
+            let m2, fx2 = send [ Studio.Saved(m0.Library.Current, 777.0) ] m1
+            Expect.equal (Projects.find m0.Library.Current m2.Library).Value.Modified 777.0 "stamped"
+            Expect.isTrue (fx2 |> List.exists (fun e -> match e with Studio.SaveIndex _ -> true | _ -> false)) "and the index is kept"
+        testCase "the time of a save does not take the editor out of the preview that holds it" <| fun () ->
+            let m0, _ = send [ Studio.Boot("", "", "", 100.0); Studio.Add Paragraph ] { Studio.init with Doc = emptyDocument }
+            let id = m0.Library.Current
+            let editing, _ = send [ Studio.FromPreview "{\"editing\":true}" ] m0
+            Expect.isSome editing.Frozen "the editor is open"
+            let after, _ = send [ Studio.Saved(id, 5.0) ] editing
+            Expect.isSome after.Frozen "the answer of the host that the project was kept leaves it open"
+        testCase "a new project is opened, kept, and takes the theme along; the one before stays as it was" <| fun () ->
+            let m0, _ = send [ Studio.Boot("", "", "", 100.0); Studio.PickProfile "Tailwind CSS 3" ] { Studio.init with Doc = emptyDocument }
+            let m1, fx = send [ Studio.NewProject ] m0
+            Expect.equal m1.Library.Items.Length 2 "two projects"
+            Expect.equal m1.Library.Current "p2" "the new one is open"
+            Expect.equal m1.Doc.Blocks [] "empty"
+            Expect.equal m1.Profile.Name "Tailwind CSS 3" "with the theme of the one before"
+            Expect.equal m1.Doc.Name (Projects.numbered "Untitled issue" m0.Library.Items) "named so that no two are alike"
+            Expect.isTrue (fx |> List.exists (fun e -> match e with Studio.Save("p2", _) -> true | _ -> false)) "kept at once"
+            Expect.isFalse (Studio.canUndo m1) "a fresh log of changes"
+        testCase "opening another project asks the host to read it, and the answer replaces the document" <| fun () ->
+            let m0, _ = send [ Studio.Boot("", "", "", 100.0); Studio.EditDoc(DName, "First"); Studio.NewProject; Studio.EditDoc(DName, "Second") ] { Studio.init with Doc = emptyDocument }
+            let m1, fx = send [ Studio.OpenProject "p1" ] m0
+            Expect.equal fx [ Studio.Load("p1", Studio.OpenIt) ] "read it"
+            Expect.equal m1.Library.Current "p2" "the open one stays open until the answer is there (a change in between is not kept under another id)"
+            let json = Codec.projectToJson { emptyDocument with Name = "First"; Subject = "back" } bootstrap
+            let m2, fx2 = send [ Studio.Loaded("p1", Studio.OpenIt, Some json) ] m1
+            Expect.equal (m2.Library.Current, m2.Doc.Subject) ("p1", "back") "opened"
+            Expect.isFalse m2.ProjectsOpen "the list closes"
+            Expect.isFalse (fx2 |> List.exists (fun e -> match e with Studio.Save _ -> true | _ -> false)) "what was read is not kept again"
+            let m3, _ = send [ Studio.Loaded("p9", Studio.OpenIt, None) ] m2
+            Expect.equal m3.Library.Current "p1" "a project that cannot be read changes nothing"
+            has m3.Notice "could not be read"
+        testCase "duplicating: the open one at once, another through the host; the copy is its own project" <| fun () ->
+            let m0, _ = send [ Studio.Boot("", "", "", 100.0); Studio.EditDoc(DName, "Issue") ] { Studio.init with Doc = emptyDocument }
+            let m1, fx = send [ Studio.DuplicateProject "p1" ] m0
+            Expect.equal (m1.Library.Items |> List.map (fun p -> p.Name) |> List.sort) [ "Issue"; "Issue (copy)" ] "a copy beside it"
+            Expect.equal m1.Library.Current "p1" "the one that was open stays open"
+            Expect.isTrue (fx |> List.exists (fun e -> match e with Studio.Save("p2", _) -> true | _ -> false)) "the copy is kept"
+            let _, fx2 = send [ Studio.DuplicateProject "p2" ] m1
+            Expect.equal fx2 [ Studio.Load("p2", Studio.CopyIt) ] "another project is read first"
+            let json = Codec.projectToJson { emptyDocument with Name = "Issue (copy)" } bootstrap
+            let m3, _ = send [ Studio.Loaded("p2", Studio.CopyIt, Some json) ] m1
+            Expect.equal (m3.Library.Items |> List.map (fun p -> p.Name) |> List.sort) [ "Issue"; "Issue (copy)"; "Issue (copy) (copy)" ] "a copy of a copy"
+        testCase "deleting another project erases it; deleting the open one opens the newest of the rest; the last one gives a new empty project" <| fun () ->
+            let m0, _ = send [ Studio.Boot("", "", "", 100.0); Studio.EditDoc(DName, "One"); Studio.NewProject; Studio.EditDoc(DName, "Two"); Studio.Saved("p2", 500.0) ] { Studio.init with Doc = emptyDocument }
+            let m1, fx = send [ Studio.AskDelete (Some "p1"); Studio.DeleteProject "p1" ] m0
+            Expect.equal (m1.Library.Items |> List.map (fun p -> p.Id)) [ "p2" ] "gone from the list"
+            Expect.isTrue (fx |> List.contains (Studio.Erase(Projects.projectKey "p1"))) "and from the storage"
+            Expect.equal m1.Library.Current "p2" "the open one stays open"
+            Expect.equal m1.Asking None "the question is closed"
+            let m2, fx2 = send [ Studio.DeleteProject "p2" ] m1
+            Expect.equal m2.Library.Items.Length 1 "the last one is replaced by a new empty project"
+            Expect.equal m2.Doc.Blocks [] "empty"
+            Expect.isTrue (fx2 |> List.contains (Studio.Erase(Projects.projectKey "p2"))) "the deleted one is erased"
+            let three, _ = send [ Studio.Boot("", "", "", 100.0); Studio.EditDoc(DName, "A"); Studio.Saved("p1", 100.0); Studio.NewProject; Studio.EditDoc(DName, "B"); Studio.Saved("p2", 200.0); Studio.NewProject ] { Studio.init with Doc = emptyDocument }
+            let after, fx3 = send [ Studio.DeleteProject "p3" ] three
+            Expect.equal after.Library.Current "" "nothing is open until the newest of the rest has been read"
+            Expect.isTrue (fx3 |> List.contains (Studio.Load("p2", Studio.OpenIt))) "the newest by when it was saved"
+            let edited, fx4 = send [ Studio.EditDoc(DName, "typed in between") ] after
+            Expect.isTrue (fx4 |> List.exists (fun e -> match e with Studio.Save("", _) -> true | _ -> false)) "a change before the answer is kept under no id (the host drops it), not under another project's"
+            Expect.equal edited.Library.Items.Length 2 "and the library is as it was"
+        testCase "import as a project adds and opens a project; a profile alone is refused" <| fun () ->
+            let project = Codec.projectToJson { Sample.issue with Name = "Imported" } tailwind
+            let m0, _ = send [ Studio.Boot("", "", "", 100.0) ] Studio.init
+            let m1, fx = send [ Studio.ImportChanged project; Studio.ImportAsProject ] m0
+            Expect.equal m1.Library.Items.Length 2 "two projects"
+            Expect.equal (m1.Doc.Name, m1.Profile.Name) ("Imported", "Tailwind CSS 3") "opened, with its theme"
+            Expect.equal m1.ImportText "" "the field is emptied"
+            Expect.isTrue (fx |> List.exists (fun e -> match e with Studio.Save(id, _) -> id = m1.Library.Current | _ -> false)) "kept"
+            let bad, _ = send [ Studio.ImportChanged "{\"x\":1}"; Studio.ImportAsProject ] m0
+            Expect.equal bad.Library.Items.Length 1 "nothing added"
+            Expect.isTrue (bad.ImportError <> "") "and it says why"
+        testCase "the search filters what the list shows" <| fun () ->
+            let m0, _ = send [ Studio.Boot("", "", "", 100.0); Studio.EditDoc(DName, "Weekly"); Studio.NewProject; Studio.EditDoc(DName, "Launch") ] { Studio.init with Doc = emptyDocument }
+            Expect.equal (Studio.visibleProjects m0).Length 2 "both"
+            let m1, _ = send [ Studio.FilterProjects "weak" ] m0
+            Expect.equal (Studio.visibleProjects m1).Length 0 "none"
+            let m2, _ = send [ Studio.FilterProjects "LAUN" ] m0
+            Expect.equal (Studio.visibleProjects m2 |> List.map (fun p -> p.Name)) [ "Launch" ] "one"
     ]
 
-let all : Test list = [ model; color; markup; render; codec; lint; studio ]
+// ───────────────────────────── projects ─────────────────�
+let projects =
+    let meta (id: string) (name: string) (modified: float) : Projects.Meta = { Id = id; Name = name; Subject = ""; Blocks = 0; Created = modified; Modified = modified }
+    testList "Projects" [
+        testCase "ids: one above the largest number in use, never twice" <| fun () ->
+            Expect.equal (Projects.nextId []) "p1" "the first"
+            Expect.equal (Projects.nextId [ meta "p1" "a" 0.0; meta "p7" "b" 0.0; meta "x" "c" 0.0 ]) "p8" "above the largest; one that is not p<n> counts as 0"
+        testCase "names: numbered for a new project, (copy) for a copy" <| fun () ->
+            let items = [ meta "p1" "Untitled issue" 0.0; meta "p2" "Untitled issue 2" 0.0 ]
+            Expect.equal (Projects.numbered "Untitled issue" items) "Untitled issue 3" "the first free number"
+            Expect.equal (Projects.numbered "Other" items) "Other" "free as it is"
+            Expect.equal (Projects.copyName "Issue" [ meta "p1" "Issue" 0.0 ]) "Issue (copy)" "a copy"
+            Expect.equal (Projects.copyName "Issue" [ meta "p1" "Issue" 0.0; meta "p2" "Issue (copy)" 0.0 ]) "Issue (copy 2)" "a copy of a copy's name"
+        testCase "the list is newest first, and the search matches name or subject in any case" <| fun () ->
+            let a = { meta "p1" "Weekly #1" 100.0 with Subject = "Small software" }
+            let b = meta "p2" "Launch" 300.0
+            let c = meta "p3" "Weekly #2" 200.0
+            let lib : Projects.Library = { Items = [ a; b; c ]; Current = "p1" }
+            Expect.equal (Projects.visible "" lib |> List.map (fun m -> m.Id)) [ "p2"; "p3"; "p1" ] "by when they were saved"
+            Expect.equal (Projects.visible "weekly" lib |> List.map (fun m -> m.Id)) [ "p3"; "p1" ] "a part of the name, whatever the case"
+            Expect.equal (Projects.visible "SOFTWARE" lib |> List.map (fun m -> m.Id)) [ "p1" ] "or of the subject"
+            Expect.equal (Projects.visible "  " lib).Length 3 "nothing typed matches all"
+        testCase "upsert replaces by id or adds first; remove drops" <| fun () ->
+            let lib : Projects.Library = { Items = [ meta "p1" "a" 1.0 ]; Current = "p1" }
+            let lib2 = Projects.upsert (meta "p1" "renamed" 5.0) lib
+            Expect.equal lib2.Items [ meta "p1" "renamed" 5.0 ] "replaced"
+            let lib3 = Projects.upsert (meta "p2" "b" 6.0) lib2
+            Expect.equal (lib3.Items |> List.map (fun m -> m.Id)) [ "p2"; "p1" ] "added in front"
+            Expect.equal (Projects.remove "p1" lib3).Items [ meta "p2" "b" 6.0 ] "dropped"
+        testCase "the index round-trips, and a damaged one is read as far as it goes" <| fun () ->
+            let lib : Projects.Library = { Items = [ { meta "p1" "Ünïcode \"quoted\"" 1.7e12 with Subject = "S"; Blocks = 4 }; meta "p2" "b" 2.0 ]; Current = "p2" }
+            Expect.equal (Projects.libraryOfJson (Projects.libraryToJson lib)) (Some lib) "round trip"
+            Expect.equal (Projects.libraryOfJson "{\"projects\":[{\"id\":\"p1\",\"name\":\"ok\"},{\"nope\":1},5]}") (Some ({ Items = [ { Id = "p1"; Name = "ok"; Subject = ""; Blocks = 0; Created = 0.0; Modified = 0.0 } ]; Current = "" } : Projects.Library)) "entries that are no project are skipped"
+            Expect.equal (Projects.libraryOfJson "{{{") None "not JSON"
+            Expect.equal (Projects.libraryOfJson "{\"x\":1}") None "not a library"
+        testCase "stamp: the date and time in UTC from milliseconds, around the leap day and the year's end" <| fun () ->
+            Expect.equal (Projects.stamp 0.0) "" "unknown"
+            Expect.equal (Projects.stamp 1.0) "1970-01-01 00:00" "the epoch"
+            Expect.equal (Projects.stamp 951782400000.0) "2000-02-29 00:00" "a leap day"
+            Expect.equal (Projects.stamp 1798742100000.0) "2026-12-31 18:35" "the end of a year"
+            Expect.equal (Projects.stamp 1785594000000.0) "2026-08-01 14:20" "a date in the middle"
+            Expect.equal (Projects.stamp 4102444799000.0) "2099-12-31 23:59" "far ahead"
+    ]
+
+let all : Test list = [ model; color; markup; render; codec; lint; studio; projects ]

@@ -52,6 +52,7 @@ that are still open, and this repository's CI builds with the compiler revision 
   paragraph, a quote, a button and a footer, their `Text`. The preview is not rendered again while it is open (the frame would take the editor away); Escape or leaving it closes it, and the typing
   is one step of the undo log. A double click is not possible: the first click selects, which renders the preview again. It is a pointer convenience; the same field is in the panel for the
   keyboard. Not edited in place: the second text of a quote and of two columns (a column is not a block), images, dividers and spacers.
+* Projects live in the browser only (local storage of this origin): no account, no sync between devices or browsers, no shared projects; export the JSON to move one. See [projects.md](projects.md).
 * No image upload or asset library: images are addresses (hosted by you); an email client cannot take a local file anyway.
 * No per-block colours or padding: the profile's tokens apply to the whole issue. Overriding them per block is the next feature.
 * No sending, no list management, no ESP integration: the export is the product. Merge tags (`{{unsubscribe_url}}`) pass through.
