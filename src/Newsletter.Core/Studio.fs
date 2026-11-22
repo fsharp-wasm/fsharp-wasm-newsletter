@@ -221,6 +221,13 @@ let beingDragged (m: Model) (id: int) : bool =
     | Dragging (DragBlock dragged, _, _, _) -> dragged = id
     | _ -> false
 
+/// Is a new block of this kind the one being dragged in from the palette?  (A pointer that is captured shows the cursor of the element that captured it, so a view gives
+/// that element the closed hand while the drag lasts, as it does the handle of a block.)
+let newBeingDragged (m: Model) (kind: Kind) : bool =
+    match m.Drag with
+    | Dragging (DragNew dragged, _, _, _) -> dragged = kind
+    | _ -> false
+
 /// The blocks after dropping `what` at `drop`.  None when that changes nothing (a block onto itself, or right where it already is) or there is no such place.
 let private landing (m: Model) (what: Dragged) (drop: Drop) : Block list option =
     let after = (drop.Position = Position.After)

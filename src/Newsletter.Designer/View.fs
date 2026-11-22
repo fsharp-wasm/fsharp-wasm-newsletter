@@ -139,7 +139,7 @@ let private palette (m: Model) (dispatch: Msg -> unit) : Node =
             button {
                 type' "button"
                 class' "btn btn-sm btn-outline-primary text-start d-flex align-items-center gap-2"
-                attr "style" "touch-action:none;user-select:none"
+                attr "style" ("touch-action:none;user-select:none;cursor:" + (if newBeingDragged m kind then "grabbing" else "grab"))
                 attr "data-add" (kindKey kind)
                 ariaLabel ("Add " + name)
                 attr "title" ("Add " + name + ": click, or drag it into the structure")
@@ -156,7 +156,7 @@ let private dragHandle (m: Model) (dispatch: Msg -> unit) (name: string) (id: in
     button {
         type' "button"
         class' "btn btn-sm btn-flat text-body-secondary px-1 d-inline-flex align-items-center"
-        attr "style" "touch-action:none;cursor:grab;user-select:none"       // none: the page must not pan or select text under a drag
+        attr "style" ("touch-action:none;user-select:none;cursor:" + (if beingDragged m id then "grabbing" else "grab"))       // touch-action none: the page must not pan or select text under a drag
         ariaLabel ("Drag " + name + " to another place, or use its Move buttons")
         attr "title" ("Drag " + name)
         for item in dragItems m dispatch (DragBlock id) do item

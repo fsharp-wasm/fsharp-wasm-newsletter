@@ -155,6 +155,7 @@ await page.mouse.move(lastBox.x + 60, lastBox.y - 40, { steps: 3 });
 check('once the pointer has moved, the block under it is shown as a ghost', await poll(async () => (await dnd('ghost').count()) === 1));
 await page.mouse.move(lastBox.x + 60, lastBox.y + lastBox.height - 4, { steps: 6 });    // the lower half of the last block
 check('a mark shows where it would drop', await poll(async () => (await dnd('mark').count()) === 1));
+check('the handle shows the closed hand while its block is dragged', await outline().first().locator('button[aria-label^="Drag"]').evaluate((e) => getComputedStyle(e).cursor === 'grabbing'));
 check('the mark takes no pointer events', await dnd('mark').evaluate((e) => getComputedStyle(e).pointerEvents === 'none'));
 await page.mouse.up();
 const order1 = await kinds();
@@ -179,6 +180,7 @@ await page.mouse.down();
 await page.mouse.move(second.x + 60, second.y + 6, { steps: 8 });                       // the upper half of the second block
 check('the ghost names the kind that is dragged', await poll(async () => /New quote/.test(await dnd('ghost').innerText())));
 check('a mark shows where the new block would go', await poll(async () => (await dnd('mark').count()) === 1));
+check('the palette button shows the closed hand while its block is dragged', await quoteButton.evaluate((e) => getComputedStyle(e).cursor === 'grabbing'));
 await page.mouse.up();
 check('dropping adds the block there', await poll(async () => (await kinds()).length === countNow + 1 && (await kinds())[1].startsWith('Quote')), (await kinds()).join(','));
 await page.waitForTimeout(300);                                                            // a click after the drop would add a second one

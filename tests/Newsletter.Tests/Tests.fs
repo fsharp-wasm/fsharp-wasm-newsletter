@@ -399,6 +399,11 @@ let studio =
             Expect.isTrue (Studio.beingDragged dragging ids.[0]) "the first is the one dragged"
             Expect.isSome (Studio.dropMark dragging) "a mark where it would drop (behind the second)"
             Expect.isSome (Studio.dragGhost dragging) "a ghost"
+            Expect.isFalse (Studio.newBeingDragged dragging Heading) "a block of the list is not a new block of the palette"
+            let fromPalette, _ = send [ Studio.DragPress(Studio.DragNew Quote, 20.0, 20.0); Studio.DragMove(20.0, 90.0, slots) ] two
+            Expect.isTrue (Studio.newBeingDragged fromPalette Quote) "the palette's quote is the one dragged"
+            Expect.isFalse (Studio.newBeingDragged fromPalette Heading) "and no other kind"
+            Expect.isFalse (Studio.newBeingDragged two Quote) "nothing is dragged before the press"
             let over, _ = send [ Studio.DragMove(20.0, 10.0, slots) ] dragging
             Expect.isNone (Studio.dropMark over) "over itself the drop would change nothing: no mark"
             let dropped, _ = send [ Studio.DragRelease(20.0, 90.0, slots) ] dragging
