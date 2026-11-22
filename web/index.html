@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-bs-theme="light">
+<html lang="en" data-bs-theme="light" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -15,6 +15,10 @@
   <script type="module">
     // where the glue and the module are: web/paths.js in a checkout, written by build/site.sh for the deployed site
     import { runtime, wasm } from "./paths.js";
+    // the bar and the look of the platform (a classic script: the runtime's frame.js finds its stylesheet and its logo beside itself); the designer is light only
+    const frame = Object.assign(document.createElement("script"), { src: runtime + "frame.js" });
+    Object.assign(frame.dataset, { compact: "", here: "Newsletter Designer" });
+    document.head.append(frame);
     const { boot } = await import(runtime + "boot.js");
     await boot({ wasm: new URL(wasm, import.meta.url), entry: "start" });
 

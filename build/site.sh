@@ -3,7 +3,7 @@
 #
 #   bash build/build.sh && bash build/site.sh
 #
-# index.html, the page's CSS, the local Bootstrap, the JavaScript glue of lib/runtime, the compiled module and the headers file.
+# index.html, the page's CSS, the local Bootstrap, the JavaScript glue and the look of lib/runtime, the compiled module and the headers file.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/dist/site"
@@ -12,7 +12,7 @@ rm -rf "$OUT"
 mkdir -p "$OUT/runtime" "$OUT/vendor"
 cp "$ROOT/web/index.html" "$ROOT/web/designer.css" "$OUT/"
 cp -r "$ROOT/web/vendor/bootstrap" "$OUT/vendor/"
-cp "$ROOT"/lib/runtime/runtime/*.js "$OUT/runtime/"
+cp "$ROOT"/lib/runtime/runtime/*.js "$ROOT/lib/runtime/runtime/theme.css" "$ROOT/lib/runtime/runtime/logo.png" "$OUT/runtime/"
 cp "$ROOT/dist/NewsletterDesigner.wasm" "$OUT/"
 cp "$ROOT/site/_headers" "$OUT/_headers"
 # beside index.html, not beside a checkout
