@@ -120,7 +120,7 @@ let private fieldRow (prefix: string) (spec: FieldSpec) (value: string) (onEdit:
 /// drops, Escape or a cancelled pointer ends it.  The browser sends a click to the pressed element after a drag, and a drag is not a click: it is swallowed.
 let private dragItems (m: Model) (dispatch: Msg -> unit) (what: Dragged) : HtmlItem list =
     [ onPointerDown (fun x y -> dispatch (DragPress(what, x, y)))
-      onPointerMove (fun x y -> if dragActive m then dispatch (DragMove(x, y, Browser.Events.measureSlots ())))
+      onPointerMove (fun x y -> if dragActive m then dispatch (DragMove(x, y, Browser.Events.measureSlots (), Browser.Dom.viewportHeight ())))
       onPointerUp (fun x y ->
           if dragActive m then
               if dragging m then Browser.Events.swallowClick ()

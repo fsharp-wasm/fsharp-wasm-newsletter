@@ -28,6 +28,9 @@ let private run' (effect: Effect) : Cmd<Msg> =
     | Erase key -> [ fun _ -> Browser.Storage.Local.remove key ]
     | Clipboard text -> [ fun dispatch -> Browser.Clipboard.writeText text (fun () -> dispatch (Copied true)) (fun _ -> dispatch (Copied false)) ]
     | ToPreview json -> [ fun _ -> Browser.Events.postToFrame previewFrame json ]
+    | ScrollBy dy -> [ fun _ -> Browser.Dom.scrollBy 0.0 dy ]
+    // the places are measured when the frame comes, after the scroll that was asked for before it
+    | NextFrame -> [ fun dispatch -> Browser.Timing.requestAnimationFrame (fun () -> dispatch (Frame(Browser.Dom.viewportHeight (), Browser.Events.measureSlots (), Browser.Timing.now ()))) |> ignore ]
 
 let private init () : Model * Cmd<Msg> =
     let hear : Cmd<Msg> = [ fun dispatch -> Browser.Events.onFrameMessage previewFrame (fun json -> dispatch (FromPreview json)) ]

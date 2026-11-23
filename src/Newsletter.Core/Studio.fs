@@ -53,7 +53,9 @@ type Model =
       Search: string
       Asking: string option
       /// the last time the host told (milliseconds since the epoch): a pure `update` has no clock
-      Clock: float }
+      Clock: float
+      /// a frame is asked for to scroll the page for a drag near the window's edge (so that no second one is): when the one before it came (0 for the first)
+      Following: float option }
 
 /// What is to be done with a project that the host has read.
 type Intent =
@@ -66,9 +68,12 @@ type Msg =
     | Remove of int
     | Move of id: int * delta: int
     | DragPress of Dragged * x: float * y: float
-    | DragMove of x: float * y: float * slots: Measured list
+    /// the pointer moved: where, the places the page measured, and how tall the window is (the page scrolls for a drag near its top or bottom)
+    | DragMove of x: float * y: float * slots: Measured list * viewport: float
     | DragRelease of x: float * y: float * slots: Measured list
     | DragCancel
+    /// the animation frame that `NextFrame` asked for: the window's height, the places measured now (after the scroll of the frame before), and the time
+    | Frame of viewport: float * slots: Measured list * now: float
     /// what the preview frame said, as the JSON it posted: a click on a block, a text edited in place, its scroll position, that it has loaded
     | FromPreview of string
     | Duplicate of int
@@ -120,6 +125,10 @@ type Effect =
     | Clipboard of string
     /// something to say to the preview frame, as JSON
     | ToPreview of string
+    /// scroll the page by this many pixels (negative: up)
+    | ScrollBy of float
+    /// answer `Frame` at the next animation frame
+    | NextFrame
 
 let private maxHistory = 100
 
@@ -127,7 +136,7 @@ let init : Model =
     { Doc = Sample.issue; Profile = defaultProfile; Selected = None; History = History.create maxHistory; Drag = Idle
       Panel = PDocument; Surface = Preview; Medium = Email; Mobile = false; Output = OutEmail
       Frozen = None; Scroll = 0; Notice = ""; ImportText = ""; ImportError = ""
-      Library = Projects.empty; ProjectsOpen = false; Search = ""; Asking = None; Clock = 0.0 }
+      Library = Projects.empty; ProjectsOpen = false; Search = ""; Asking = None; Clock = 0.0; Following = None }
 
 let private snapshot (m: Model) : Snapshot = { Doc = m.Doc; Profile = m.Profile }
 
@@ -202,6 +211,21 @@ let private slotsOf (measured: Measured list) : Slot list =
     measured |> List.map (fun (id, x, y, w, h, nests) -> { Id = id; Bounds = Rect.create (float32 x) (float32 y) (float32 w) (float32 h); Flow = Flow.Down; Nests = nests })
 
 let private at (x: float) (y: float) : Vec2 = Vec2.create (float32 x) (float32 y)
+
+/// How fast the page scrolls for the drag at hand, in pixels per frame of a 60 Hz screen: nothing in the middle of the window, and within a margin of its top or bottom edge up to a speed, faster
+/// the closer the pointer is (`Scroll.near`).  The window's height comes from the page, a pure `update` cannot ask; only the vertical axis counts.
+let private speedOf (viewport: float) (m: Model) : float =
+    match m.Drag with
+    | Dragging (_, _, at, _) -> float (Scroll.near (Rect.create 0.0f 0.0f 0.0f (float32 viewport)) 64.0f 18.0f at).Y
+    | _ -> 0.0
+
+let private frameMs = 1000.0 / 60.0
+
+/// What a frame scrolls: the speed for the time since the frame before (a screen of 144 Hz scrolls as fast as one of 60, and a frame that came late as far as it was late, but not more than three
+/// frames' worth: a tab that was away does not jump).  Whole pixels, and at least one inside the margin: the browser drops a scroll of a fraction, and the strip would stand still.
+let private scrollOf (speed: float) (elapsed: float) : float =
+    let px = speed * min (3.0 * frameMs) elapsed / frameMs
+    if px > 0.0 then ceil px else floor px
 
 /// Is a block being pressed or dragged: the page then reports every move of the pointer.
 let dragActive (m: Model) : bool =
@@ -337,7 +361,16 @@ let rec private step (msg: Msg) (m: Model) : Model * Effect list =
         let m2 = commit "" "" doc m.Profile m
         { m2 with Selected = (match copy with Some c -> Some c | None -> m.Selected); Notice = "Duplicated." }, []
     | DragPress(what, x, y) -> { m with Drag = Drag.press what (at x y) }, []
-    | DragMove(x, y, slots) -> { m with Drag = Drag.move (slotsOf slots) (at x y) m.Drag }, []
+    | DragMove(x, y, slots, viewport) ->
+        let m1 = { m with Drag = Drag.move (slotsOf slots) (at x y) m.Drag }
+        // one frame at a time asks the next while the pointer rests near the edge: a pointer that rests sends no events
+        if m1.Following.IsSome || speedOf viewport m1 = 0.0 then m1, [] else { m1 with Following = Some 0.0 }, [ NextFrame ]
+    | Frame(viewport, slots, now) ->
+        // the places have moved with the last scroll: the drop is read again, for the pointer where it rests
+        let m1 = (match m.Drag with Dragging (_, _, pointer, _) -> { m with Drag = Drag.move (slotsOf slots) pointer m.Drag } | _ -> m)
+        let speed = speedOf viewport m1
+        let elapsed = (match m.Following with Some last when last > 0.0 -> now - last | _ -> frameMs)
+        if speed = 0.0 then { m1 with Following = None }, [] else { m1 with Following = Some now }, [ ScrollBy (scrollOf speed elapsed); NextFrame ]
     | DragRelease(x, y, slots) ->
         let landed = Drag.move (slotsOf slots) (at x y) m.Drag
         let m1 = { m with Drag = Idle }

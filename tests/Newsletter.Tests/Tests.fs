@@ -294,6 +294,8 @@ let lint =
 let studio =
     let send (msgs: Studio.Msg list) (m: Studio.Model) = msgs |> List.fold (fun (m, fx) msg -> let m2, e = Studio.update msg m in m2, fx @ e) (m, [])
     let start = { Studio.init with Doc = emptyDocument }
+    // a window 1000 px tall: the margin where a drag scrolls the page is its top and bottom 64 px, and no drag below sits in it
+    let tall = 1000.0
     testList "Studio" [
         testCase "adding selects the new block and opens the inspector" <| fun () ->
             let m, fx = send [ Studio.Add Heading; Studio.Add Button ] start
@@ -381,8 +383,8 @@ let studio =
             let slots = ids |> List.mapi (fun i id -> (id, 0.0, float i * 50.0, 200.0, 40.0, false))
             let moved, fx =
                 send [ Studio.DragPress(Studio.DragBlock ids.[0], 20.0, 20.0)       // on the first block
-                       Studio.DragMove(20.0, 60.0, slots)                            // beyond the threshold, over the second
-                       Studio.DragMove(20.0, 128.0, slots)                           // over the lower half of the third
+                       Studio.DragMove(20.0, 60.0, slots, tall)                            // beyond the threshold, over the second
+                       Studio.DragMove(20.0, 128.0, slots, tall)                           // over the lower half of the third
                        Studio.DragRelease(20.0, 128.0, slots) ] three
             Expect.equal (moved.Doc.Blocks |> List.map (fun b -> b.Id)) [ ids.[1]; ids.[2]; ids.[0] ] "the first block is last now"
             has moved.Notice "moved by dragging"
@@ -390,21 +392,81 @@ let studio =
             Expect.equal (moved.History.Past.Length - three.History.Past.Length) 1 "one step"
             let back, _ = send [ Studio.Undo ] moved
             Expect.equal (back.Doc.Blocks |> List.map (fun b -> b.Id)) ids "undo puts it back"
+        // ── the page scrolls for a drag near the window's edge ──
+        testCase "a drag near the bottom edge asks for one frame; each frame scrolls and asks the next while the pointer rests there" <| fun () ->
+            let two, _ = send [ Studio.Add Heading; Studio.Add Paragraph; Studio.Select None ] start
+            let ids = two.Doc.Blocks |> List.map (fun b -> b.Id)
+            let slots = ids |> List.mapi (fun i id -> (id, 0.0, 900.0 + float i * 50.0, 200.0, 40.0, false))
+            let pressed, _ = send [ Studio.DragPress(Studio.DragBlock ids.[0], 20.0, 920.0) ] two
+            let middle, fx = send [ Studio.DragMove(20.0, 500.0, slots, tall) ] pressed
+            Expect.equal fx [] "in the middle of the window nothing scrolls, and no frame is asked for"
+            let near, fx = send [ Studio.DragMove(20.0, 985.0, slots, tall) ] middle
+            Expect.equal fx [ Studio.NextFrame ] "49 px into the margin: a frame is asked for"
+            let moved, fx = send [ Studio.DragMove(20.0, 990.0, slots, tall) ] near
+            Expect.equal fx [] "a pointer that moves on meanwhile does not ask for a second one"
+            let frame, fx = send [ Studio.Frame(tall, slots, 1000.0) ] moved
+            Expect.equal fx [ Studio.ScrollBy 16.0; Studio.NextFrame ] "the pointer is 54 px into the margin: 54/64 of the fastest 18 px a frame is 15.2, rounded up to whole pixels; and the next frame"
+            let again, fx = send [ Studio.Frame(tall, slots, 1000.0 + 1000.0 / 60.0) ] frame
+            Expect.equal fx [ Studio.ScrollBy 16.0; Studio.NextFrame ] "and so on while it rests"
+            Expect.isTrue (Studio.dragActive again) "the drag goes on"
+            Expect.equal again.Doc two.Doc "nothing is changed by scrolling"
+        testCase "the page scrolls as fast on a fast screen as on a slow one: by the time since the frame before, and not by more than three frames' worth" <| fun () ->
+            let two, _ = send [ Studio.Add Heading; Studio.Add Paragraph; Studio.Select None ] start
+            let ids = two.Doc.Blocks |> List.map (fun b -> b.Id)
+            let slots = ids |> List.mapi (fun i id -> (id, 0.0, 900.0 + float i * 50.0, 200.0, 40.0, false))
+            // 54 px into the margin: 15.2 px per frame of 60 Hz
+            let scrolling, _ = send [ Studio.DragPress(Studio.DragBlock ids.[0], 20.0, 920.0); Studio.DragMove(20.0, 990.0, slots, tall) ] two
+            let at hz = { scrolling with Following = Some 1000.0 }, 1000.0 + 1000.0 / hz
+            let scrolledAt hz = let m, now = at hz in snd (Studio.update (Studio.Frame(tall, slots, now)) m)
+            Expect.equal (scrolledAt 60.0) [ Studio.ScrollBy 16.0; Studio.NextFrame ] "60 Hz: 15.2 px, rounded up"
+            Expect.equal (scrolledAt 120.0) [ Studio.ScrollBy 8.0; Studio.NextFrame ] "120 Hz: half of it in a frame of half the length (7.6 px)"
+            Expect.equal (scrolledAt 30.0) [ Studio.ScrollBy 31.0; Studio.NextFrame ] "30 Hz: twice (30.4 px)"
+            Expect.equal (scrolledAt 2.0) [ Studio.ScrollBy 46.0; Studio.NextFrame ] "a frame after half a second scrolls the three frames' worth that is the most (45.6 px)"
+        testCase "the frames stop when the pointer leaves the margin, or lets go, or the drag is cancelled, and a later drag asks again" <| fun () ->
+            let two, _ = send [ Studio.Add Heading; Studio.Add Paragraph; Studio.Select None ] start
+            let ids = two.Doc.Blocks |> List.map (fun b -> b.Id)
+            let slots = ids |> List.mapi (fun i id -> (id, 0.0, 900.0 + float i * 50.0, 200.0, 40.0, false))
+            let scrolling, _ = send [ Studio.DragPress(Studio.DragBlock ids.[0], 20.0, 920.0); Studio.DragMove(20.0, 985.0, slots, tall) ] two
+            Expect.isTrue scrolling.Following.IsSome "a frame is pending"
+            let left, _ = send [ Studio.DragMove(20.0, 500.0, slots, tall) ] scrolling
+            let ended, fx = send [ Studio.Frame(tall, slots, 1000.0) ] left
+            Expect.equal fx [] "the pointer is in the middle again: no scroll, no next frame"
+            Expect.isNone ended.Following "the loop is over"
+            let released, _ = send [ Studio.DragRelease(20.0, 985.0, slots) ] scrolling
+            let afterRelease, fx = send [ Studio.Frame(tall, slots, 1000.0) ] released
+            Expect.equal fx [] "nothing is dragged any more"
+            Expect.isNone afterRelease.Following "the pending frame ends it"
+            let cancelled, _ = send [ Studio.DragCancel ] scrolling
+            Expect.isNone (fst (send [ Studio.Frame(tall, slots, 1000.0) ] cancelled)).Following "the same after escape"
+            let again, fx = send [ Studio.DragPress(Studio.DragBlock ids.[0], 20.0, 920.0); Studio.DragMove(20.0, 985.0, slots, tall) ] ended
+            Expect.equal fx [ Studio.NextFrame ] "a drag after that asks again"
+            Expect.isSome again.Following "pending"
+        testCase "at the top edge the page scrolls up, and the drop is read again with the places the page measures after each scroll" <| fun () ->
+            let two, _ = send [ Studio.Add Heading; Studio.Add Paragraph; Studio.Select None ] start
+            let ids = two.Doc.Blocks |> List.map (fun b -> b.Id)
+            let slots = ids |> List.mapi (fun i id -> (id, 0.0, float i * 50.0, 200.0, 40.0, false))
+            let top, _ = send [ Studio.DragPress(Studio.DragBlock ids.[0], 20.0, 20.0); Studio.DragMove(20.0, 10.0, slots, tall) ] two
+            let frame, fx = send [ Studio.Frame(tall, slots, 1000.0) ] { top with Following = Some 0.0 }
+            Expect.equal fx [ Studio.ScrollBy -16.0; Studio.NextFrame ] "54 px into the margin: 15.2 up, rounded away from zero to whole pixels"
+            let pointerOnSecond, _ = send [ Studio.DragMove(20.0, 85.0, slots, tall) ] { frame with Following = Some 0.0 }
+            Expect.isSome (Studio.dropMark pointerOnSecond) "over the lower half of the second block: a mark behind it"
+            let scrolledAway, _ = send [ Studio.Frame(tall, [], 1000.0) ] pointerOnSecond
+            Expect.isNone (Studio.dropMark scrolledAway) "the places moved from under the pointer: no mark any more (and the pointer is in the middle: the loop ends)"
         testCase "while a block is dragged the view has the mark and the ghost; neither stays after the drop" <| fun () ->
             let two, _ = send [ Studio.Add Heading; Studio.Add Paragraph ] start
             let ids = two.Doc.Blocks |> List.map (fun b -> b.Id)
             let slots = ids |> List.mapi (fun i id -> (id, 0.0, float i * 50.0, 200.0, 40.0, false))
-            let dragging, _ = send [ Studio.DragPress(Studio.DragBlock ids.[0], 20.0, 20.0); Studio.DragMove(20.0, 90.0, slots) ] two
+            let dragging, _ = send [ Studio.DragPress(Studio.DragBlock ids.[0], 20.0, 20.0); Studio.DragMove(20.0, 90.0, slots, tall) ] two
             Expect.isTrue (Studio.dragActive dragging) "active"
             Expect.isTrue (Studio.beingDragged dragging ids.[0]) "the first is the one dragged"
             Expect.isSome (Studio.dropMark dragging) "a mark where it would drop (behind the second)"
             Expect.isSome (Studio.dragGhost dragging) "a ghost"
             Expect.isFalse (Studio.newBeingDragged dragging Heading) "a block of the list is not a new block of the palette"
-            let fromPalette, _ = send [ Studio.DragPress(Studio.DragNew Quote, 20.0, 20.0); Studio.DragMove(20.0, 90.0, slots) ] two
+            let fromPalette, _ = send [ Studio.DragPress(Studio.DragNew Quote, 20.0, 20.0); Studio.DragMove(20.0, 90.0, slots, tall) ] two
             Expect.isTrue (Studio.newBeingDragged fromPalette Quote) "the palette's quote is the one dragged"
             Expect.isFalse (Studio.newBeingDragged fromPalette Heading) "and no other kind"
             Expect.isFalse (Studio.newBeingDragged two Quote) "nothing is dragged before the press"
-            let over, _ = send [ Studio.DragMove(20.0, 10.0, slots) ] dragging
+            let over, _ = send [ Studio.DragMove(20.0, 10.0, slots, tall) ] dragging
             Expect.isNone (Studio.dropMark over) "over itself the drop would change nothing: no mark"
             let dropped, _ = send [ Studio.DragRelease(20.0, 90.0, slots) ] dragging
             Expect.isFalse (Studio.dragActive dropped) "idle again"
@@ -413,7 +475,7 @@ let studio =
             let two, _ = send [ Studio.Add Heading; Studio.Add Paragraph ] start
             let ids = two.Doc.Blocks |> List.map (fun b -> b.Id)
             let slots = ids |> List.mapi (fun i id -> (id, 0.0, float i * 50.0, 200.0, 40.0, false))
-            let clicked, fx = send [ Studio.DragPress(Studio.DragBlock ids.[0], 20.0, 20.0); Studio.DragMove(22.0, 21.0, slots); Studio.DragRelease(22.0, 21.0, slots) ] two
+            let clicked, fx = send [ Studio.DragPress(Studio.DragBlock ids.[0], 20.0, 20.0); Studio.DragMove(22.0, 21.0, slots, tall); Studio.DragRelease(22.0, 21.0, slots) ] two
             Expect.equal clicked.Doc two.Doc "the document is as it was"
             Expect.equal clicked.History.Past.Length two.History.Past.Length "no step"
             Expect.equal fx [] "nothing saved"
@@ -421,15 +483,16 @@ let studio =
             let two, _ = send [ Studio.Add Heading; Studio.Add Paragraph ] start
             let ids = two.Doc.Blocks |> List.map (fun b -> b.Id)
             let slots = ids |> List.mapi (fun i id -> (id, 0.0, float i * 50.0, 200.0, 40.0, false))
-            let cancelled, _ = send [ Studio.DragPress(Studio.DragBlock ids.[0], 20.0, 20.0); Studio.DragMove(20.0, 90.0, slots); Studio.DragCancel ] two
+            let cancelled, _ = send [ Studio.DragPress(Studio.DragBlock ids.[0], 20.0, 20.0); Studio.DragMove(20.0, 90.0, slots, tall); Studio.DragCancel ] two
             Expect.isFalse (Studio.dragActive cancelled) "idle"
             Expect.equal cancelled.Doc two.Doc "unchanged"
             has cancelled.Notice "cancelled"
             // behind the first block, where it already is
-            let same, fx = send [ Studio.DragPress(Studio.DragBlock ids.[0], 20.0, 20.0); Studio.DragMove(20.0, 30.0, slots); Studio.DragRelease(20.0, 30.0, slots) ] two
+            let same, fx = send [ Studio.DragPress(Studio.DragBlock ids.[0], 20.0, 20.0); Studio.DragMove(20.0, 30.0, slots, tall); Studio.DragRelease(20.0, 30.0, slots) ] two
             Expect.equal same.Doc two.Doc "unchanged"
             has same.Notice "where it was"
-            Expect.equal fx [] "nothing saved"
+            // 30 px under the top of the window the page would scroll up: a frame is asked for, and that is all
+            Expect.isFalse (fx |> List.exists (fun e -> match e with Studio.Save _ | Studio.SaveIndex _ -> true | _ -> false)) "nothing saved"
         // ── dragging a new block from the palette ──
         testCase "dragging a block kind from the palette puts a new block where it is dropped, selected, in one step of the log" <| fun () ->
             let three, _ = send [ Studio.Add Heading; Studio.Add Paragraph; Studio.Add Divider; Studio.Select None ] start
@@ -438,8 +501,8 @@ let studio =
             // the palette is elsewhere on the page (x = 500): the press is not over a block; the drop is on the upper half of the second
             let added, fx =
                 send [ Studio.DragPress(Studio.DragNew Quote, 500.0, 20.0)
-                       Studio.DragMove(300.0, 60.0, slots)
-                       Studio.DragMove(20.0, 55.0, slots)
+                       Studio.DragMove(300.0, 60.0, slots, tall)
+                       Studio.DragMove(20.0, 55.0, slots, tall)
                        Studio.DragRelease(20.0, 55.0, slots) ] three
             let kinds = added.Doc.Blocks |> List.map (fun b -> b.Kind)
             Expect.equal kinds [ Heading; Quote; Paragraph; Divider ] "the quote is between the first and the second"
@@ -456,7 +519,7 @@ let studio =
             let two, _ = send [ Studio.Add Heading; Studio.Add Paragraph ] start
             let ids = two.Doc.Blocks |> List.map (fun b -> b.Id)
             let slots = ids |> List.mapi (fun i id -> (id, 0.0, float i * 50.0, 200.0, 40.0, false))
-            let over, _ = send [ Studio.DragPress(Studio.DragNew Divider, 500.0, 20.0); Studio.DragMove(20.0, 10.0, slots) ] two
+            let over, _ = send [ Studio.DragPress(Studio.DragNew Divider, 500.0, 20.0); Studio.DragMove(20.0, 10.0, slots, tall) ] two
             Expect.isSome (Studio.dropMark over) "a mark, even over the first block: a new block always changes the document"
             Expect.equal (Studio.dragGhost over |> Option.map (fun (label, _, _) -> label)) (Some "New divider") "the ghost says what is coming"
             Expect.isFalse (Studio.beingDragged over ids.[0]) "no block of the list is dimmed"
@@ -467,10 +530,10 @@ let studio =
             let two, _ = send [ Studio.Add Heading; Studio.Add Paragraph ] start
             let ids = two.Doc.Blocks |> List.map (fun b -> b.Id)
             let slots = ids |> List.mapi (fun i id -> (id, 0.0, float i * 50.0, 200.0, 40.0, false))
-            let outside, _ = send [ Studio.DragPress(Studio.DragNew Spacer, 500.0, 20.0); Studio.DragMove(520.0, 400.0, []); Studio.DragRelease(520.0, 400.0, []) ] two
+            let outside, _ = send [ Studio.DragPress(Studio.DragNew Spacer, 500.0, 20.0); Studio.DragMove(520.0, 400.0, [], tall); Studio.DragRelease(520.0, 400.0, []) ] two
             Expect.equal outside.Doc two.Doc "nothing added"
             has outside.Notice "nothing added"
-            let cancelled, _ = send [ Studio.DragPress(Studio.DragNew Spacer, 500.0, 20.0); Studio.DragMove(20.0, 90.0, slots); Studio.DragCancel ] two
+            let cancelled, _ = send [ Studio.DragPress(Studio.DragNew Spacer, 500.0, 20.0); Studio.DragMove(20.0, 90.0, slots, tall); Studio.DragCancel ] two
             Expect.equal cancelled.Doc two.Doc "unchanged"
             Expect.isFalse (Studio.dragActive cancelled) "idle"
             has cancelled.Notice "Adding cancelled"
@@ -479,7 +542,7 @@ let studio =
             Expect.equal fx [] "nothing saved"
         testCase "a new block dropped on the empty list is the first block" <| fun () ->
             let slots = [ (Dnd.endOfList, 0.0, 0.0, 200.0, 60.0, false) ]
-            let first, _ = send [ Studio.DragPress(Studio.DragNew Footer, 500.0, 20.0); Studio.DragMove(100.0, 30.0, slots); Studio.DragRelease(100.0, 30.0, slots) ] start
+            let first, _ = send [ Studio.DragPress(Studio.DragNew Footer, 500.0, 20.0); Studio.DragMove(100.0, 30.0, slots, tall); Studio.DragRelease(100.0, 30.0, slots) ] start
             Expect.equal (first.Doc.Blocks |> List.map (fun b -> b.Kind)) [ Footer ] "one block"
             Expect.equal first.Selected (Some first.Doc.Blocks.[0].Id) "selected"
         // ── what the preview frame says ──

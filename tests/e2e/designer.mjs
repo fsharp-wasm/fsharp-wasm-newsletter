@@ -199,6 +199,39 @@ await page.keyboard.press('Escape');
 await page.mouse.up();
 await page.waitForTimeout(300);
 check('Escape cancels a new block: nothing added, no mark', (await kinds()).length === countNow && (await dnd('mark').count()) === 0 && (await dnd('ghost').count()) === 0);
+// ── the page scrolls for a drag near the edge of the window, as long as the pointer rests there ──
+await page.setViewportSize({ width: 1400, height: 520 });
+await page.evaluate(() => window.scrollTo(0, 0));
+const scrollY = () => page.evaluate(() => Math.round(window.scrollY));
+check('the list is longer than a small window: there is something to scroll to', await page.evaluate(() => document.documentElement.scrollHeight > innerHeight + 300));
+await grab(0);
+await page.mouse.move(400, 260, { steps: 4 });
+await page.waitForTimeout(250);
+check('a drag in the middle of the window does not scroll the page', (await scrollY()) === 0);
+await page.mouse.move(400, 515, { steps: 4 });                                              // the bottom edge
+check('at the bottom edge the page scrolls down', await poll(async () => (await scrollY()) > 150));
+const restingAt = await scrollY();
+await page.waitForTimeout(250);
+check('and goes on while the pointer rests there (it sends no events)', (await scrollY()) > restingAt + 50, `${restingAt} -> ${await scrollY()}`);
+check('the drag is still on, with its ghost and the places measured again after the scroll', (await dnd('ghost').count()) === 1 && (await dnd('mark').count()) <= 1);
+await page.mouse.move(400, 260, { steps: 4 });                                              // away from the edge
+await page.waitForTimeout(120);
+const leftAt = await scrollY();
+await page.waitForTimeout(250);
+check('it stops when the pointer leaves the edge', (await scrollY()) === leftAt, `${leftAt} -> ${await scrollY()}`);
+await page.mouse.move(400, 4, { steps: 4 });                                                // the top edge
+check('at the top edge the page scrolls up', await poll(async () => (await scrollY()) < leftAt - 100), `from ${leftAt} to ${await scrollY()}`);
+const upAt = await scrollY();
+await page.mouse.move(400, 515, { steps: 4 });
+check('and down again', await poll(async () => (await scrollY()) > upAt + 100), `from ${upAt} to ${await scrollY()} (it was ${leftAt} before)`);
+await page.keyboard.press('Escape');
+await page.waitForTimeout(120);
+const cancelledAt = await scrollY();
+await page.waitForTimeout(250);
+check('Escape stops the scrolling with the drag', (await scrollY()) === cancelledAt, `${cancelledAt} -> ${await scrollY()}`);
+await page.mouse.up();
+check('nothing was moved by all that', (await kinds()).join() === order0.join());
+await page.evaluate(() => window.scrollTo(0, 0));
 await page.setViewportSize(viewport ?? { width: 1280, height: 720 });
 
 // ── the keyboard: everything has a name and can be reached by Tab; activate with Enter and Space ──
