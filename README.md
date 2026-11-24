@@ -72,6 +72,15 @@ npm ci && node tests/e2e/designer.mjs         # the designer in Chromium (Playwr
 
 The design decisions and what is not in the MVP are in [docs/design.md](docs/design.md).
 
+## Contributing
+
+Welcome. [CONTRIBUTING](https://github.com/fsharp-wasm/.github/blob/develop/CONTRIBUTING.md) is the organisation's guide and [AGENTS.md](AGENTS.md) says how the platform is worked on (the compiler comes first: a fault found here
+is fixed in the compiler, not worked around here).
+
+- **Run the tests:** `bash build/test.sh dotnet` (the library under .NET); `node tests/e2e/designer.mjs` for the designer in Chromium.
+- **A good first contribution:** A framework profile (the class map and tokens of another CSS framework), or a check for `Lint` that real mail needs. Issues labelled [`good first issue`](https://github.com/fsharp-wasm/fsharp-wasm-newsletter/labels/good%20first%20issue) are the places to start.
+- **A change** goes to `develop` as a pull request, with a test that fails without it. Open an issue first for anything larger than a fix.
+
 ## Licence
 
 Apache License 2.0 (see `LICENSE`, `NOTICE`). The local copy of Bootstrap keeps its own MIT licence (`web/vendor/bootstrap/LICENSE`); the icons are Lucide's (ISC, some MIT: `licenses/lucide-LICENSE.txt`, `NOTICE`); the email stylesheet comes from `FSharp.Wasm.Ui` in fsharp-wasm-core, which ports Foundation for Emails (MIT; the text is in `licenses/foundation-for-emails-LICENSE.md` here and in core).
