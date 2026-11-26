@@ -1,5 +1,9 @@
 # fsharp-wasm-newsletter
 
+<!-- status -->
+[![CI](https://github.com/fsharp-wasm/fsharp-wasm-newsletter/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/fsharp-wasm/fsharp-wasm-newsletter/actions/workflows/ci.yml) [![Pages](https://github.com/fsharp-wasm/fsharp-wasm-newsletter/actions/workflows/pages.yml/badge.svg?branch=main)](https://github.com/fsharp-wasm/fsharp-wasm-newsletter/actions/workflows/pages.yml) [![Deploy](https://github.com/fsharp-wasm/fsharp-wasm-newsletter/actions/workflows/deploy.yml/badge.svg?branch=main)](https://github.com/fsharp-wasm/fsharp-wasm-newsletter/actions/workflows/deploy.yml) · [Status of every repository](https://fsharp-wasm.github.io/status/)
+<!-- /status -->
+
 <!-- platform -->
 > **Part of the [fsharp-wasm platform](https://fsharp-wasm.github.io/projects/)**: editors and applications. Builds on [core](https://github.com/fsharp-wasm/fsharp-wasm-core), [runtime](https://github.com/fsharp-wasm/fsharp-wasm-runtime). Used by nobody; it is a gate of the compiler.
 > [All projects](https://fsharp-wasm.github.io/projects/) · [Roadmap](https://fsharp-wasm.github.io/docs/roadmap/) · [Tests](https://fsharp-wasm.github.io/tests/) · [Benchmarks](https://fsharp-wasm.github.io/benchmarks/) · [Live demos](https://fsharp-wasm.github.io/demos/)
