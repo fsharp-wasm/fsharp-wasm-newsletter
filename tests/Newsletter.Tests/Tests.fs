@@ -367,6 +367,15 @@ let studio =
             let m, _ = send [ Studio.SetOutput Studio.OutText ] { start with Doc = Sample.issue }
             let _, fx = send [ Studio.Copy ] m
             Expect.equal fx [ Studio.Clipboard(Render.text Sample.issue) ] "text"
+        testCase "download hands the shown output to the browser as a file, with the name and the type of that output" <| fun () ->
+            let shown = { start with Doc = Sample.issue }
+            for o, file, mime in [ Studio.OutEmail, "newsletter-email.html", "text/html"
+                                   Studio.OutWeb, "newsletter-web.html", "text/html"
+                                   Studio.OutText, "newsletter.txt", "text/plain"
+                                   Studio.OutJson, "newsletter.json", "application/json" ] do
+                let m, _ = send [ Studio.SetOutput o ] shown
+                let _, fx = send [ Studio.Download ] m
+                Expect.equal fx [ Studio.SaveFile(file, mime, Studio.output m) ] (sprintf "%A" o)
         testCase "the preview shows the selected block and uses the local stylesheet" <| fun () ->
             let m, _ = send [ Studio.Select(Some 2); Studio.SetMedium Studio.Web ] { start with Doc = Sample.issue }
             let h = Studio.previewHtml m

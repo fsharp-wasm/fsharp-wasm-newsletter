@@ -112,6 +112,8 @@ type Msg =
     | Saved of id: string * now: float
     | Copy
     | Copied of bool
+    /// hand the shown output to the person as a file
+    | Download
 
 type Effect =
     /// the project of this id as JSON, to keep in the browser (the host answers `Saved` with the time)
@@ -123,6 +125,8 @@ type Effect =
     /// forget what the browser keeps under this key
     | Erase of string
     | Clipboard of string
+    /// a text to be saved as a file: its name, its media type, the text
+    | SaveFile of fileName: string * mimeType: string * text: string
     /// something to say to the preview frame, as JSON
     | ToPreview of string
     /// scroll the page by this many pixels (negative: up)
@@ -168,6 +172,14 @@ let output (m: Model) : string =
     | OutWeb -> Render.web Render.exportOptions m.Profile m.Doc
     | OutText -> Render.text m.Doc
     | OutJson -> Codec.projectToJson m.Doc m.Profile
+
+/// The name and the media type of the file that an output is saved as.
+let outputFile (o: Output) : string * string =
+    match o with
+    | OutEmail -> "newsletter-email.html", "text/html"
+    | OutWeb -> "newsletter-web.html", "text/html"
+    | OutText -> "newsletter.txt", "text/plain"
+    | OutJson -> "newsletter.json", "application/json"
 
 /// The designer ships a local copy of Bootstrap, so the preview does not depend on the network.
 let localStylesheet (url: string) : string = if url = bootstrapUrl then "vendor/bootstrap/bootstrap.min.css" else url
@@ -507,6 +519,7 @@ let rec private step (msg: Msg) (m: Model) : Model * Effect list =
             m2, [ indexOf m2 ]
          | None -> m1, [])
     | Copy -> { m with Notice = "Copying…" }, [ Clipboard(output m) ]
+    | Download -> m, [ (let file, mime = outputFile m.Output in SaveFile(file, mime, output m)) ]
     | Copied ok -> { m with Notice = (if ok then "Copied to the clipboard." else "Copying was blocked by the browser: select the text and copy it by hand.") }, []
 
 /// The next state, and what the browser has to do: keep the project (whenever the document or the profile changed), copy.

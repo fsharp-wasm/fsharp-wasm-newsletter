@@ -387,20 +387,20 @@ let private previewFrame (m: Model) : Node =
         }
     }
 
-let private outputNames : (Output * string * string * string) list =
-    [ OutEmail, "Email HTML", "newsletter-email.html", "text/html"
-      OutWeb, "Web HTML", "newsletter-web.html", "text/html"
-      OutText, "Plain text", "newsletter.txt", "text/plain"
-      OutJson, "Project (JSON)", "newsletter.json", "application/json" ]
+let private outputNames : (Output * string) list =
+    [ OutEmail, "Email HTML"
+      OutWeb, "Web HTML"
+      OutText, "Plain text"
+      OutJson, "Project (JSON)" ]
 
 let private codeView (m: Model) (dispatch: Msg -> unit) : Node =
-    let name, file, mime = outputNames |> List.find (fun (o, _, _, _) -> o = m.Output) |> fun (_, n, f, t) -> n, f, t
+    let name = outputNames |> List.find (fun (o, _) -> o = m.Output) |> snd
     div {
         div {
             class' "d-flex flex-wrap gap-2 align-items-center mb-2"
-            group "What to show" [ for (o, title, _, _) in outputNames -> toggle title (m.Output = o) (fun () -> dispatch (SetOutput o)) ]
+            group "What to show" [ for (o, title) in outputNames -> toggle title (m.Output = o) (fun () -> dispatch (SetOutput o)) ]
             button { type' "button"; class' "btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1"; onClick (fun () -> dispatch Copy); Icon.node 16 Lucide.copy; "Copy" }
-            button { type' "button"; class' "btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1"; data' "download" file; data' "source" "#export-text"; data' "type" mime; Icon.node 16 Lucide.download; "Download" }
+            button { type' "button"; class' "btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1"; onClick (fun () -> dispatch Download); Icon.node 16 Lucide.download; "Download" }
         }
         label { attr "for" "export-text"; class' "visually-hidden"; name }
         textarea {

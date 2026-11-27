@@ -27,6 +27,7 @@ let private run' (effect: Effect) : Cmd<Msg> =
             dispatch (Loaded(id, intent, (if json = "" then None else Some json))) ]
     | Erase key -> [ fun _ -> Browser.Storage.Local.remove key ]
     | Clipboard text -> [ fun dispatch -> Browser.Clipboard.writeText text (fun () -> dispatch (Copied true)) (fun _ -> dispatch (Copied false)) ]
+    | SaveFile(fileName, mimeType, text) -> [ fun _ -> Browser.Files.download fileName mimeType text ]
     | ToPreview json -> [ fun _ -> Browser.Events.postToFrame previewFrame json ]
     | ScrollBy dy -> [ fun _ -> Browser.Dom.scrollBy 0.0 dy ]
     // the places are measured when the frame comes, after the scroll that was asked for before it

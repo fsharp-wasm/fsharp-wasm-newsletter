@@ -21,19 +21,6 @@
     document.head.append(frame);
     const { boot } = await import(runtime + "boot.js");
     await boot({ wasm: new URL(wasm, import.meta.url), entry: "start" });
-
-    // One thing the page does for the module, in a few lines; the designer itself is F#.  (The preview frame is sandboxed and talks to the module through
-    // messages: that relay is F# too, Browser.Events.onFrameMessage.)
-    // Download: a button names the file and the element that holds the text.
-    document.addEventListener("click", (e) => {
-      const b = e.target.closest?.("[data-download]");
-      const src = b && document.querySelector(b.dataset.source);
-      if (!src) return;
-      const url = URL.createObjectURL(new Blob([src.value ?? src.textContent], { type: b.dataset.type || "text/plain" }));
-      const a = Object.assign(document.createElement("a"), { href: url, download: b.dataset.download });
-      a.click();
-      URL.revokeObjectURL(url);
-    });
   </script>
 </body>
 </html>
